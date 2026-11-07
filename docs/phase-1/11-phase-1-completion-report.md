@@ -30,7 +30,7 @@ All 7 final security corrections have been incorporated:
    * Strictly idempotent: never overwrites existing SuperAdmin credentials.
 4. **Fictional Demo Data:**
    * Real school names replaced with fictional demo organizations: *Apex Academy* and *Horizon International*.
-   * Test emails utilize reserved RFC 2606 domains (`@apex.example.edu`, `@horizon.example.edu`).
+   * Test emails utilize reserved RFC 2606 / RFC 6761 domains (`@apex.example`, `@horizon.example`).
    * Demo seeds strictly prohibited in production (`NODE_ENV === 'production'`).
 5. **Broad UUID Validation:**
    * UUID validation regex accepts valid UUID formats without restricting UUID versions:

@@ -60,6 +60,7 @@ Any request to `/api/v1/*` must pass these verification checks in order:
 2. **Issuer & Audience Check:** `iss` must match `https://auth.schoolsaas.com` and `aud` must match `schoolsaas-api`.
 3. **Key ID (`kid`):** Token `kid` is verified against the public key catalog.
 4. **Tenant Match:** `token.claims.tenant_id` must match the tenant ID resolved from the request hostname. If there is a mismatch, the request is terminated with `403 Forbidden: Tenant Cross-Talk Blocked`.
+5. **Broad UUID Claim Validation:** All UUID-formatted claims (`sub`, `tenant_id`, `membership_id`, and optional `branch_id`) are validated against RFC 4122 / RFC 9562 format (`/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i`), supporting UUID versions 1 through 8. Invalid identifier structures trigger an immediate `401 Unauthorized` response.
 
 ---
 

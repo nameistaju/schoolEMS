@@ -119,6 +119,26 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 -- 7. Audit Logs Protection: Append-Only (NO UPDATE, NO DELETE, NO TRUNCATE)
 GRANT INSERT, SELECT ON audit_logs TO school_app_user;
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM school_app_user;
+
+-- 8. Migration Execution Role Switching
+-- When school_migration_user connects to run migrations, it must switch active role to school_schema_owner.
+-- This ensures all created tables, constraints, indexes, and policies are owned by school_schema_owner,
+-- honoring ALTER DEFAULT PRIVILEGES FOR ROLE school_schema_owner.
+SET ROLE school_schema_owner;
+```
+
+### 2.1 Knex Migration Pool Role Configuration
+In `knexfile.js`, the migration connection pool executes `SET ROLE school_schema_owner;` on connection acquisition:
+```javascript
+pool: {
+  min: 1,
+  max: 5,
+  afterCreate: (conn, done) => {
+    conn.query('SET ROLE school_schema_owner;', (err) => {
+      done(err, conn);
+    });
+  }
+}
 ```
 
 ---
@@ -182,6 +202,19 @@ async function withTenantContext(pool, tenantId, callback) {
 ---
 
 ## 5. Row-Level Security Policies on Phase 1 Tables
+
+### 5.1 Command Operation Breakdown (`USING` vs `WITH CHECK`)
+
+PostgreSQL evaluates RLS policies distinctly for each SQL command type:
+
+| Command | Evaluated Clause | Evaluation Lifecycle & Security Behavior |
+| :--- | :--- | :--- |
+| **`SELECT`** | `USING` | Filters rows during query execution. Rows where `tenant_id = current_setting('app.current_tenant_id', true)::uuid` evaluate to `TRUE` and are returned. Rows with a different tenant ID or `NULL` evaluate to `FALSE` and are silently filtered out as if they do not exist. |
+| **`INSERT`** | `WITH CHECK` | Validates newly inserted row data before committing. If `NEW.tenant_id` matches `current_setting('app.current_tenant_id', true)::uuid`, insert proceeds. If the tenant ID differs or context is empty, PostgreSQL immediately aborts with error: `new row violates row-level security policy for table "..."`. |
+| **`UPDATE`** | `USING` and `WITH CHECK` | **Dual Evaluation:**<br>1. `USING` evaluates existing row visibility: if the row belongs to another tenant, it is invisible and 0 rows are updated.<br>2. `WITH CHECK` evaluates modified row values: ensures `NEW.tenant_id` matches current tenant, preventing accidental or malicious row reassignment across tenants. |
+| **`DELETE`** | `USING` | Filters target rows for deletion. Only rows where `USING` evaluates to `TRUE` can be deleted. Other tenants' rows are invisible and completely untouched. |
+
+### 5.2 DDL Implementation for Phase 1 Tables
 
 RLS is enabled and forced on the Phase 1 tenant-owned tables in `auth_db`:
 

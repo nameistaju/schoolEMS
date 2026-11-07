@@ -13,7 +13,7 @@ To move away from hardcoded raw SQL strings in application startup files while a
 
 ### Core Migration Principles
 1. **Scope Boundary:** Migrations apply **strictly to `auth_db`**. The e-commerce databases (`catalog_db`, `cart_db`, `orders_db`, `payments_db`) are not touched.
-2. **Controlled Migration Role:** Migrations execute as `school_migration_user` (which belongs to `school_schema_owner`), not as the PostgreSQL superuser.
+2. **Controlled Migration Role & Schema Ownership:** Migrations execute as `school_migration_user` (which belongs to `school_schema_owner`), not as the PostgreSQL superuser. To ensure all created database objects are owned by `school_schema_owner` rather than the login user, the migration connection pool MUST execute `SET ROLE school_schema_owner;` immediately upon opening the connection (or via Knex `pool.afterCreate` hook) prior to executing any DDL.
 3. **Idempotent & Transactional:** Every migration runs inside a PostgreSQL transaction (`BEGIN ... COMMIT`). If any statement fails, the entire migration rolls back automatically.
 4. **Reversible (Bi-Directional):** Every migration file must export both `up(knex)` and `down(knex)` methods.
 5. **Version-Tracked:** The `knex_migrations` table records executed migration timestamps, filenames, and execution batches.
@@ -84,6 +84,6 @@ projects/telugu-pickles/services/auth-service/migrations/
 * **Trigger:** `npm run seed:demo-schools`
 * **Production Guard:** Throws an immediate exception if `NODE_ENV === 'production'`.
 * **Fictional Data (RFC 2606 Compliant):**
-  * **School A:** *Apex Academy* (`slug: apex-academy`), Campuses: `Main Campus`, `North Campus`. Admin: `admin@apex.example.edu`.
-  * **School B:** *Horizon International* (`slug: horizon-intl`), Campus: `Main Campus`. Admin: `admin@horizon.example.edu`.
+  * **School A:** *Apex Academy* (`slug: apex-academy`), Campuses: `Main Campus`, `North Campus`. Admin: `admin@apex.example`.
+  * **School B:** *Horizon International* (`slug: horizon-intl`), Campus: `Main Campus`. Admin: `admin@horizon.example`.
 * **Idempotency:** `ON CONFLICT (slug) DO NOTHING`.
