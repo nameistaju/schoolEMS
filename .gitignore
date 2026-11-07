@@ -29,6 +29,7 @@ Thumbs.db
 
 # Logs
 *.log
+.agents/gate-failures.log
 
 # Environment variables
 .env
@@ -45,7 +46,7 @@ dist/
 *_override.tf.json
 
 # AIOps Lambda build output
-projects/Infrastructure/modules/aiops/.build/
+projects/infrastructure/modules/aiops/.build/
 
 # Secrets, Keys, and Bootstrap Credentials
 .bootstrap-credentials.json

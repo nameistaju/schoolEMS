@@ -4,8 +4,8 @@
 #   push to main          -> security scan + plan + APPLY      (creates/updates VPC, EKS, ECR, Argo CD, ...)
 #   Run workflow (manual) -> choose plan | apply | destroy      (destroy needs confirm = "destroy")
 #
-# State lives in S3 (bucket from projects/Infrastructure/bootstrap), shared with your laptop.
-# GitHub settings needed (see docs/CICD-EKS-GUIDE.md):
+# State lives in S3 (bucket from projects/infrastructure/bootstrap), shared with your laptop.
+# GitHub settings needed (see docs/legacy/cicd-eks-guide.md):
 #   secret   AWS_ROLE_ARN      IAM role from bootstrap (OIDC)
 #   variable AWS_REGION        optional, default us-east-1
 #   variable TF_STATE_BUCKET   optional, default telugu-pickles-tfstate-<account id>
@@ -15,14 +15,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "projects/Infrastructure/**"
-      - "!projects/Infrastructure/bootstrap/**" # bootstrap is laptop-only
+      - "projects/infrastructure/**"
+      - "!projects/infrastructure/bootstrap/**" # bootstrap is laptop-only
       - "projects/aiops-assistant/lambda/**" # AIOps Lambda code is packaged by Terraform
       - ".github/workflows/infra.yml"
   pull_request:
     paths:
-      - "projects/Infrastructure/**"
-      - "!projects/Infrastructure/bootstrap/**"
+      - "projects/infrastructure/**"
+      - "!projects/infrastructure/bootstrap/**"
       - "projects/aiops-assistant/lambda/**"
       - ".github/workflows/infra.yml"
   workflow_dispatch:
@@ -49,7 +49,7 @@ env:
   TF_VERSION: "1.16.6"
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
-  TF_DIR: projects/Infrastructure
+  TF_DIR: projects/infrastructure
 
 jobs:
   security:

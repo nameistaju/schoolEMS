@@ -15,12 +15,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "projects/telugu-pickles/**"
+      - "projects/school-management/**"
       - ".github/workflows/ci.yml"
       # gitops/ is NOT listed: the bot's tag-bump commit must not re-trigger this pipeline
   pull_request:
     paths:
-      - "projects/telugu-pickles/**"
+      - "projects/school-management/**"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -57,13 +57,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            projects/telugu-pickles/services/package-lock.json
-            projects/telugu-pickles/frontend/package-lock.json
+            projects/school-management/services/package-lock.json
+            projects/school-management/frontend/package-lock.json
       - name: Backend unit tests
-        working-directory: projects/telugu-pickles/services
+        working-directory: projects/school-management/services
         run: npm ci --no-audit --no-fund && npm test
       - name: Frontend production build
-        working-directory: projects/telugu-pickles/frontend
+        working-directory: projects/school-management/frontend
         run: npm ci --no-audit --no-fund && npm run build
 
   aws:
@@ -118,7 +118,7 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          context: projects/telugu-pickles/${{ matrix.service == 'frontend' && 'frontend' || 'services' }}
+          context: projects/school-management/${{ matrix.service == 'frontend' && 'frontend' || 'services' }}
           build-args: SERVICE=${{ matrix.service }}
           platforms: linux/amd64
           pull: true # always start from the latest patched base image

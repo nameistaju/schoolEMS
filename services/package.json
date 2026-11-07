@@ -1,0 +1,34 @@
+{
+  "name": "school-management-services",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend microservices for SchoolEMS Multi-Tenant School Management SaaS (gateway, auth, common)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:wsl": "wsl -u root su - postgres -c pg_lsclusters && node --test \"test/**/*.test.js\"",
+    "dev": "concurrently -n gateway,auth,ui -c blue,green,magenta \"npm run start:gateway\" \"npm run start:auth\" \"npm --prefix ../frontend run dev\"",
+    "dev:backend": "concurrently -n gateway,auth -c blue,green \"npm run start:gateway\" \"npm run start:auth\"",
+    "start:gateway": "node gateway/src/index.js",
+    "start:auth": "node auth-service/src/index.js",
+    "migrate": "knex --knexfile auth-service/knexfile.js migrate:latest",
+    "migrate:rollback": "knex --knexfile auth-service/knexfile.js migrate:rollback",
+    "seed:superadmin": "node auth-service/seeds/prod/01_superadmin_bootstrap.js",
+    "seed:demo-schools": "node auth-service/seeds/dev/02_demo_schools.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^18.0.9",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.3.0",
+    "pg": "^8.13.1",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}

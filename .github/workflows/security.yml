@@ -76,10 +76,10 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src "$TRIVY_IMAGE" config . \
             --severity HIGH,CRITICAL --exit-code 0 \
-            --skip-dirs projects/Infrastructure/.terraform
+            --skip-dirs projects/infrastructure/.terraform
           docker run --rm -v "$PWD:/src" -w /src "$TRIVY_IMAGE" config . \
             --severity HIGH,CRITICAL --exit-code 0 --quiet \
-            --skip-dirs projects/Infrastructure/.terraform \
+            --skip-dirs projects/infrastructure/.terraform \
             --format sarif --output trivy-config.sarif
 
       - name: Upload to Code scanning

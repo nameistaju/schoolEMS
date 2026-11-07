@@ -3,20 +3,29 @@ Write-Host "==========================================================" -Foregro
 Write-Host " Starting Multi-Tenant School Management Platform (Phase 1)" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. Start PostgreSQL in WSL if needed
+# 1. Start PostgreSQL in WSL if needed and resolve WSL network host
 Write-Host "`n[1/3] Ensuring PostgreSQL is running..." -ForegroundColor Yellow
 try {
     wsl -u root service postgresql start 2>$null
     wsl -u root systemctl start postgresql@18-main 2>$null
     wsl -u root su - postgres -c "pg_lsclusters" 2>$null
-    Write-Host "PostgreSQL service verified on 127.0.0.1:5432" -ForegroundColor Green
+    
+    $wslRaw = wsl -d Ubuntu -- bash -c "hostname -I" 2>$null
+    if ($wslRaw) {
+        $wslIp = $wslRaw.Trim().Split(' ')[0]
+        if ($wslIp -and $wslIp.StartsWith("172.")) {
+            $env:PGHOST = $wslIp
+            Write-Host "Resolved PostgreSQL host on WSL IP: $wslIp" -ForegroundColor Green
+        }
+    }
+    Write-Host "PostgreSQL service verified." -ForegroundColor Green
 } catch {
     Write-Host "Warning: Could not start PostgreSQL via WSL. Please ensure PostgreSQL is running on port 5432." -ForegroundColor Red
 }
 
 # 2. Run Database Migrations on auth_db
 Write-Host "`n[2/3] Checking and applying database migrations..." -ForegroundColor Yellow
-Push-Location projects/telugu-pickles/services
+Push-Location services
 try {
     npm run migrate
     Write-Host "Database migrations verified on auth_db." -ForegroundColor Green
@@ -32,10 +41,11 @@ Write-Host "  * Frontend UI:    http://localhost:5173" -ForegroundColor Green
 Write-Host "  * API Gateway:    http://localhost:8080/api/health" -ForegroundColor Green
 Write-Host "  * Auth Service:   http://localhost:4001" -ForegroundColor Green
 Write-Host "`nDemo Accounts (Seeded):" -ForegroundColor White
-Write-Host "  * Apex SchoolAdmin:    admin@apex.example    / DemoPassword@2026" -ForegroundColor Cyan
-Write-Host "  * Horizon SchoolAdmin: admin@horizon.example / DemoPassword@2026" -ForegroundColor Cyan
-Write-Host "  * Apex Teacher:        teacher@apex.example  / DemoPassword@2026" -ForegroundColor Cyan
-Write-Host "  * Apex Student:        student@apex.example  / DemoPassword@2026" -ForegroundColor Cyan
+Write-Host "  * Platform SuperAdmin: superadmin@schoolsaas.internal / SuperAdmin@2026" -ForegroundColor Cyan
+Write-Host "  * Apex SchoolAdmin:    admin@apex.example             / DemoPassword@2026" -ForegroundColor Cyan
+Write-Host "  * Horizon SchoolAdmin: admin@horizon.example          / DemoPassword@2026" -ForegroundColor Cyan
+Write-Host "  * Apex Teacher:        teacher@apex.example           / DemoPassword@2026" -ForegroundColor Cyan
+Write-Host "  * Apex Student:        student@apex.example           / DemoPassword@2026" -ForegroundColor Cyan
 Write-Host "----------------------------------------------------------`n" -ForegroundColor DarkGray
 
 npm run dev
