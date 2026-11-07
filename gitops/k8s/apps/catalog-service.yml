@@ -1,0 +1,125 @@
+# catalog-service — Pickle catalogue + stock
+#
+# CANARY release (Argo Rollouts) with automatic analysis:
+#   25% of pods new  -> wait 1 min -> Prometheus check (2 min): 5xx ratio of NEW pods <= 5%
+#   50% of pods new  -> wait 1 min -> same check
+#   100%             -> done
+# If a check fails, Argo Rollouts ABORTS and scales the new version back to 0 (automatic rollback).
+# The Service sends traffic to all pods, so "25% of pods" = about 25% of requests.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: catalog-service
+  namespace: telugu-pickles
+  labels:
+    app: catalog-service
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/part-of: telugu-pickles
+spec:
+  replicas: 4
+  revisionHistoryLimit: 5
+  strategy:
+    canary:
+      maxUnavailable: 0
+      steps:
+        - setWeight: 25
+        - pause: { duration: 1m }
+        - analysis:
+            templates:
+              - templateName: canary-error-rate
+            args:
+              - name: service
+                value: catalog-service
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
+        - setWeight: 50
+        - pause: { duration: 1m }
+        - analysis:
+            templates:
+              - templateName: canary-error-rate
+            args:
+              - name: service
+                value: catalog-service
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
+        - setWeight: 100
+  selector:
+    matchLabels:
+      app: catalog-service
+  template:
+    metadata:
+      labels:
+        app: catalog-service
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/part-of: telugu-pickles
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: catalog-service
+          image: telugu-pickles/catalog-service   # real ECR URI + tag is set in kustomization.yml (images:)
+          ports:
+            - name: http
+              containerPort: 4002
+          envFrom:
+            - configMapRef:
+                name: telugu-pickles-config
+            - secretRef:
+                name: telugu-pickles-secrets
+          env:
+            - name: PORT
+              value: "4002"
+            - name: DB_NAME
+              value: catalog_db
+            - name: CHAOS_ERROR_RATE
+              value: "0.5"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: telugu-pickles
+  labels:
+    app: catalog-service
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/part-of: telugu-pickles
+    metrics: enabled
+spec:
+  type: ClusterIP
+  selector:
+    app: catalog-service
+  ports:
+    - name: http
+      port: 4002
+      targetPort: http

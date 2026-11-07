@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Kubernetes
+*.kubeconfig
+
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Node / build output
+node_modules/
+dist/
+
+# Terraform plans
+*.tfplan
+
+# Terraform local overrides (never commit)
+*_override.tf
+*_override.tf.json
+
+# AIOps Lambda build output
+projects/Infrastructure/modules/aiops/.build/
