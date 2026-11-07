@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
+    "test:wsl": "wsl -u root su - postgres -c pg_lsclusters && node --test \"test/**/*.test.js\"",
     "dev": "concurrently -n gateway,auth,ui -c blue,green,magenta \"npm run start:gateway\" \"npm run start:auth\" \"npm --prefix ../frontend run dev\"",
     "dev:backend": "concurrently -n gateway,auth -c blue,green \"npm run start:gateway\" \"npm run start:auth\"",
     "start:gateway": "node gateway/src/index.js",

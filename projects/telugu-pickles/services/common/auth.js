@@ -87,14 +87,20 @@ function validateKeypair(privKeyPem, pubKeyPem) {
   }
 }
 
+function verifyProductionKeyConfig(env = process.env) {
+  if (env.NODE_ENV === 'production') {
+    if (!env.JWT_PRIVATE_KEY || !env.JWT_PUBLIC_KEY) {
+      throw new Error('Production security violation: JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be configured in production');
+    }
+    validateKeypair(env.JWT_PRIVATE_KEY, env.JWT_PUBLIC_KEY);
+  }
+}
+
 let privateKey = process.env.JWT_PRIVATE_KEY;
 let publicKey = process.env.JWT_PUBLIC_KEY;
 
 if (process.env.NODE_ENV === 'production') {
-  if (!privateKey || !publicKey) {
-    throw new Error('Production security violation: JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be configured in production');
-  }
-  validateKeypair(privateKey, publicKey);
+  verifyProductionKeyConfig(process.env);
 } else {
   if (privateKey && publicKey) {
     validateKeypair(privateKey, publicKey);
@@ -268,6 +274,7 @@ module.exports = {
   generateRefreshToken,
   getPublicKeyPem,
   validateKeypair,
+  verifyProductionKeyConfig,
   registerTrustedKey,
   getTrustedKey,
   SCHOOL_ISSUER,

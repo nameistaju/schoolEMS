@@ -257,7 +257,11 @@ function createMembershipsRouter(pool) {
           'SELECT id, user_id FROM user_tenant_memberships WHERE id = $1 AND tenant_id = $2',
           [req.params.id, tenantId]
         );
-        if (!memRows[0]) throw new Error('Member not found in current school');
+        if (!memRows[0]) {
+          const err = new Error('Member not found in current school');
+          err.statusCode = 404;
+          throw err;
+        }
 
         // Prevent self-escalation / self-assignment of roles
         if (memRows[0].user_id === req.user.sub) {
@@ -304,7 +308,8 @@ function createMembershipsRouter(pool) {
       return sendSuccess(res, { assignment: result }, 201, req);
     } catch (err) {
       const code = err.statusCode || (err.message.includes('prohibited') ? 403 : 400);
-      return sendError(res, code === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR', err.message, code, null, req);
+      const errCode = code === 403 ? 'FORBIDDEN' : (code === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+      return sendError(res, errCode, err.message, code, null, req);
     }
   });
 
@@ -321,7 +326,11 @@ function createMembershipsRouter(pool) {
           'SELECT id, user_id FROM user_tenant_memberships WHERE id = $1 AND tenant_id = $2',
           [req.params.id, tenantId]
         );
-        if (!memRows[0]) throw new Error('Member not found in current school');
+        if (!memRows[0]) {
+          const err = new Error('Member not found in current school');
+          err.statusCode = 404;
+          throw err;
+        }
 
         if (memRows[0].user_id === req.user.sub && !req.user.roles?.includes('SuperAdmin')) {
           const err = new Error('Self-removal of administrative roles is prohibited');

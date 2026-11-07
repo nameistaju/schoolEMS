@@ -6,8 +6,10 @@ Write-Host "==========================================================" -Foregro
 # 1. Start PostgreSQL in WSL if needed
 Write-Host "`n[1/3] Ensuring PostgreSQL is running..." -ForegroundColor Yellow
 try {
-    wsl -u root service postgresql start
-    Write-Host "PostgreSQL is active on 127.0.0.1:5432" -ForegroundColor Green
+    wsl -u root service postgresql start 2>$null
+    wsl -u root systemctl start postgresql@18-main 2>$null
+    wsl -u root su - postgres -c "pg_lsclusters" 2>$null
+    Write-Host "PostgreSQL service verified on 127.0.0.1:5432" -ForegroundColor Green
 } catch {
     Write-Host "Warning: Could not start PostgreSQL via WSL. Please ensure PostgreSQL is running on port 5432." -ForegroundColor Red
 }

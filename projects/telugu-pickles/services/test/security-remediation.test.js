@@ -8,6 +8,7 @@ const { Client, Pool } = require('pg');
 
 const {
   validateKeypair,
+  verifyProductionKeyConfig,
   signSchoolToken,
   verifySchoolToken,
   registerTrustedKey,
@@ -37,6 +38,8 @@ let principalUserId;
 let schoolAdminMembershipId;
 let principalMembershipId;
 let ordinaryMembershipId;
+let tenantBMembershipId;
+let tenantIdB = '44444444-4444-4444-4444-444444444444';
 
 test.before(async () => {
   // 1. Create disposable test database
@@ -150,6 +153,24 @@ test.before(async () => {
     VALUES ($1, $2, 'active') RETURNING id
   `, [tenantId, ordinaryUserId]);
   ordinaryMembershipId = memOrd[0].id;
+
+  // 7. Seed Tenant B and membership for cross-tenant isolation testing
+  await pool.query(`
+    INSERT INTO tenants (id, name, slug, status)
+    VALUES ($1, 'Tenant B Academy', 'tenant-b-acad', 'active')
+  `, [tenantIdB]);
+
+  const { rows: tbUser } = await pool.query(`
+    INSERT INTO users (full_name, name, email, password_hash, status)
+    VALUES ('Tenant B User', 'TenantBUser', 'user@tenantb.test', $1, 'active')
+    RETURNING id
+  `, [passHash]);
+
+  const { rows: memB } = await pool.query(`
+    INSERT INTO user_tenant_memberships (tenant_id, user_id, status)
+    VALUES ($1, $2, 'active') RETURNING id
+  `, [tenantIdB, tbUser[0].id]);
+  tenantBMembershipId = memB[0].id;
 });
 
 test.after(async () => {
@@ -360,6 +381,31 @@ test('Security H-01.5: Unauthorized self-promotion is blocked on /:id/roles', as
   assert.match(responseData.error.message, /Self-assignment of roles is strictly prohibited/i);
 });
 
+test('Security H-01.6: Cross-tenant role assignment is rejected', async () => {
+  const router = createMembershipsRouter(pool);
+  const assignRoleHandler = router.stack.find((r) => r.route?.path === '/:id/roles')?.route?.stack[1]?.handle;
+
+  let statusCode;
+  let responseData;
+  // SchoolAdmin of Tenant A attempts to modify membership belonging to Tenant B
+  const req = {
+    params: { id: tenantBMembershipId },
+    user: { sub: schoolAdminUserId, tenant_id: tenantId, roles: ['SchoolAdmin'] },
+    body: { roleKey: 'Teacher' },
+    headers: {},
+  };
+  const res = {
+    status: (code) => { statusCode = code; return res; },
+    json: (data) => { responseData = data; return res; },
+  };
+
+  await assignRoleHandler(req, res);
+  assert.strictEqual(statusCode, 404);
+  assert.strictEqual(responseData.success, false);
+  assert.strictEqual(responseData.error.code, 'NOT_FOUND');
+  assert.match(responseData.error.message, /Member not found in current school/i);
+});
+
 // =========================================================================
 // SECTION 3: H-02 Production RSA Key Validation & Rotation
 // =========================================================================
@@ -466,6 +512,46 @@ test('Security H-02.7: Key rotation: registerTrustedKey allows verifying rotated
 
   const claims = verifySchoolToken(token);
   assert.deepStrictEqual(claims.roles, ['SchoolAdmin']);
+});
+
+test('Security H-02.8: Production startup fails without RSA keys', () => {
+  assert.throws(
+    () => verifyProductionKeyConfig({ NODE_ENV: 'production' }),
+    /Production security violation: JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be configured in production/i
+  );
+});
+
+test('Security H-02.9: Production startup rejects invalid RSA keys', () => {
+  assert.throws(
+    () => verifyProductionKeyConfig({
+      NODE_ENV: 'production',
+      JWT_PRIVATE_KEY: '---INVALID PEM PRIVATE KEY---',
+      JWT_PUBLIC_KEY: '---INVALID PEM PUBLIC KEY---',
+    }),
+    /Invalid PEM format/i
+  );
+});
+
+test('Security H-02.10: Production startup rejects mismatched RSA keypairs', () => {
+  const kpA = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  const kpB = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+
+  assert.throws(
+    () => verifyProductionKeyConfig({
+      NODE_ENV: 'production',
+      JWT_PRIVATE_KEY: kpA.privateKey,
+      JWT_PUBLIC_KEY: kpB.publicKey,
+    }),
+    /do not form a matching keypair/i
+  );
 });
 
 // =========================================================================

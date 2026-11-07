@@ -6,7 +6,7 @@ echo " Starting Multi-Tenant School Management Platform (Phase 1)"
 echo "=========================================================="
 
 echo -e "\n[1/3] Ensuring PostgreSQL is running..."
-sudo service postgresql start || true
+sudo service postgresql start 2>/dev/null || sudo systemctl start postgresql@18-main 2>/dev/null || true
 
 echo -e "\n[2/3] Checking and applying database migrations..."
 cd projects/telugu-pickles/services
