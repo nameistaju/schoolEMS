@@ -1,22 +1,22 @@
 # Document 04: Authentication, Cryptographic JWT & Session Management
 
-**Document Status:** DOCUMENTATION REVIEWED — AWAITING IMPLEMENTATION APPROVAL  
+**Document Status:** PHASE 1 IMPLEMENTATION PLAN CORRECTED — READY FOR DEVELOPMENT IMPLEMENTATION  
 **Classification:** Security Engineering Specification  
 **Phase:** 1 of 10 — Multi-Tenant Foundation & Identity Service  
-**Date:** March 2026 (Reviewed & Corrected)  
+**Date:** March 2026 (Final Security Corrections Applied)  
 
 ---
 
 ## 1. Authentication Architecture & Protocol Flows
 
-Phase 1 upgrades the platform from a symmetric, monolithic customer login to an enterprise multi-tenant authentication engine supporting asymmetric tokens, refresh rotation, and session family invalidation.
+Phase 1 establishes an enterprise multi-tenant authentication engine supporting asymmetric tokens, cryptographic refresh rotation, and absolute algorithm isolation from legacy e-commerce tokens.
 
 ```
 [ Browser / Client ]              [ Gateway ]                 [ Identity Service ]
         │                              │                              │
         │── 1. POST /api/v1/auth/login►│                              │
         │      { email, password }     │── 2. Forward with Host ─────►│
-        │      Host: dps.schoolsaas.com│                              │── 3. Resolve Tenant (DPS)
+        │      Host: apex.schoolsaas...│                              │── 3. Resolve Tenant (Apex)
         │                              │                              │── 4. Verify Password (bcrypt)
         │                              │                              │── 5. Assert Active Membership
         │                              │                              │── 6. Create Session Family
@@ -29,7 +29,41 @@ Phase 1 upgrades the platform from a symmetric, monolithic customer login to an 
 
 ---
 
-## 2. Password Security & Hashing Standards
+## 2. Cryptographic JWT Isolation & Validation Standards
+
+### 2.1 Complete Segregation of Legacy vs. School Authentication
+To prevent privilege escalation or confusion attacks, the platform enforces strict algorithm and issuer segregation:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            TOKEN ISOLATION BOUNDARY                              │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+[ LEGACY E-COMMERCE TOKEN (Untrusted on School APIs) ]
+  ├── Algorithm: HS256 (Symmetric HMAC)
+  ├── Issuer:    "telugu-pickles-auth"
+  ├── Claims:    { sub: user_id, email, name }
+  └── REJECTION: Gateway and Identity Service REJECT HS256 on all /api/v1/* routes.
+
+[ SCHOOL PLATFORM TOKEN (Authoritative on School APIs) ]
+  ├── Algorithm: RS256 (Asymmetric RSA 2048-bit Private Key)
+  ├── Key ID:    kid = "school-auth-2026-v1"
+  ├── Issuer:    "https://auth.schoolsaas.com"
+  ├── Audience:  "schoolsaas-api"
+  ├── Claims:    { sub, jti, tenant_id, membership_id, branch_id, roles, iat, exp }
+  └── ACCEPTANCE: Accepted strictly on /api/v1/* after full cryptographic validation.
+```
+
+### 2.2 Verification Rules
+Any request to `/api/v1/*` must pass these verification checks in order:
+1. **Algorithm Check:** Header `alg` must be strictly `RS256`. Any token with `HS256`, `none`, or unexpected algorithms is immediately rejected with `401 Unauthorized`.
+2. **Issuer & Audience Check:** `iss` must match `https://auth.schoolsaas.com` and `aud` must match `schoolsaas-api`.
+3. **Key ID (`kid`):** Token `kid` is verified against the public key catalog.
+4. **Tenant Match:** `token.claims.tenant_id` must match the tenant ID resolved from the request hostname. If there is a mismatch, the request is terminated with `403 Forbidden: Tenant Cross-Talk Blocked`.
+
+---
+
+## 3. Password Security & Hashing Standards
 
 * **Algorithm:** `bcrypt` via [`bcryptjs`](file:///c:/Users/bantu/Desktop/JuneAWSAIOpsProj-main/projects/telugu-pickles/services/package.json).
 * **Cost Factor:** Work factor $12$ (balancing defense against offline brute-force attacks with sub-250ms API login response time on modern CPU cores).
@@ -37,32 +71,6 @@ Phase 1 upgrades the platform from a symmetric, monolithic customer login to an 
   * Minimum length: 10 characters.
   * Complexity: At least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special symbol (`[!@#$%^&*]`).
   * Account Enumeration Prevention: All failed login attempts return a uniform error message: `{"error": "Invalid email, password, or school domain"}` with constant-time response characteristics.
-
----
-
-## 3. Cryptographic Token Architecture (RS256)
-
-### 3.1 Asymmetric Key Pair Management
-* Tokens are signed using **RSA 2048-bit Private Key** (`private_key.pem`) held strictly by `school-identity-service`.
-* Verification is performed across the Gateway and downstream microservices using the corresponding **Public Key** (`public_key.pem`) or via a local JSON Web Key Set endpoint (`GET /.well-known/jwks.json`).
-* In development, keys are generated via `crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })` or injected via environment variables. In production, keys are stored in AWS Secrets Manager.
-
-### 3.2 Access Token Claims Specification
-```json
-{
-  "iss": "https://auth.schoolsaas.com",
-  "aud": "schoolsaas-api",
-  "sub": "7a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
-  "jti": "9f8e7d6c-5b4a-3f2e-1d0c-9b8a7f6e5d4c",
-  "tenant_id": "11111111-2222-3333-4444-555555555555",
-  "membership_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-  "branch_id": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
-  "roles": ["SchoolAdmin"],
-  "iat": 1772866800,
-  "exp": 1772867700
-}
-```
-* **Lifespan:** Exactly **15 minutes** (900 seconds).
 
 ---
 

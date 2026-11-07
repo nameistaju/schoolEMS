@@ -1,9 +1,9 @@
 # Document 01: Phase 1 Target Architecture & Foundation Specification
 
-**Document Status:** DOCUMENTATION REVIEWED — AWAITING IMPLEMENTATION APPROVAL  
+**Document Status:** PHASE 1 IMPLEMENTATION PLAN CORRECTED — READY FOR DEVELOPMENT IMPLEMENTATION  
 **Classification:** Enterprise Architecture Blueprint  
 **Phase:** 1 of 10 — Multi-Tenant Foundation & Identity Service  
-**Date:** March 2026 (Reviewed & Corrected)  
+**Date:** March 2026 (Final Security Corrections Applied)  
 
 ---
 
@@ -33,7 +33,7 @@ In accordance with strict preservation rules, **all existing e-commerce services
 
 [ 2. PHASE 1 MULTI-TENANT IDENTITY UPGRADE ]
   └── auth_db     <── auth-service / identity-service (:4001)
-                      * Extends existing users table safely
+                      * Extends existing users table non-destructively
                       * Adds Phase 1 multi-tenant tables (tenants, branches, RBAC, RLS)
 
 [ 3. FUTURE SCHOOL DOMAIN DATABASES (TO BE PROVISIONED IN PHASES 2–6) ]
@@ -44,7 +44,7 @@ In accordance with strict preservation rules, **all existing e-commerce services
 ```
 
 * **No Silent Repurposing:** `catalog_db`, `orders_db`, and `payments_db` are **NOT** repurposed for school records. They remain dedicated to e-commerce. Future school services will connect to their own dedicated databases (`school_academic_db`, etc.) when those phases are formally authorized.
-* **Backward Compatibility:** Existing e-commerce authentication endpoints (`/auth/login`, `/auth/register`, `/auth/me`) remain backward-compatible during Phase 1.
+* **Controlled Transition:** `auth-service`, `gateway`, and common utilities are preserved for reuse. Their source directories remain intact while migration dependencies are systematically resolved.
 
 ---
 
@@ -57,12 +57,13 @@ In accordance with strict preservation rules, **all existing e-commerce services
                                   [ Route 53 + ALB ]
                                            │
                              [ school-gateway (:8080) ]
-                             ├── 1. Host Extraction (e.g. dps.schoolsaas.com)
+                             ├── 1. Host Extraction (e.g. apex.schoolsaas.com)
                              ├── 2. Tenant Domain Resolver (Domain Cache)
                              │      * Strict Host resolution in Production
                              │      * X-Tenant-Domain allowed ONLY in Local Dev
                              ├── 3. Inbound Header Sanitization (Strip X-Verified-*)
                              ├── 4. Asymmetric JWT Validation (RS256 Public Key)
+                             │      * Strict Alg Check: Rejects HS256 legacy tokens
                              └── 5. Rate Limiting (IP Sliding Window)
                                            │
                         ┌──────────────────┴──────────────────┐
@@ -84,7 +85,7 @@ In accordance with strict preservation rules, **all existing e-commerce services
                         ▼
           [ Database Pool Checkout with Transaction Context ]
              BEGIN;
-             SELECT set_config('app.current_tenant_id', tenant_id, true);
+             SELECT set_config('app.current_tenant_id', $1, true);
                         │
                         ▼
           [ PostgreSQL Kernel: Row-Level Security (RLS) ]
@@ -103,10 +104,10 @@ In accordance with strict preservation rules, **all existing e-commerce services
 | **ADR-01** | Database Assignment | Retain `auth_db` as the initial identity store. | Preserves Docker Compose and Kubernetes configurations; introduces multi-tenancy without schema conflicts. |
 | **ADR-02** | E-Commerce DB Preservation | Keep `catalog_db`, `orders_db`, and `payments_db` 100% separate and untouched. | Prevents data corruption; school domain services will receive dedicated databases (`school_*_db`) in later phases. |
 | **ADR-03** | Schema Migration Framework | Adopt **Knex.js** (`knex`). | SQL-first, lightweight, transactional `.up()` / `.down()`, zero native C++ compilation bindings, tracks `knex_migrations`. |
-| **ADR-04** | SuperAdmin Provisioning | Dedicated CLI bootstrap seed script (`npm run seed:superadmin`). | Isolates SaaS operator accounts from school tenant tables; requires `BOOTSTRAP_SUPERADMIN_SECRET`. |
+| **ADR-04** | SuperAdmin Provisioning | Dedicated CLI bootstrap seed script with explicit secret. | Never prints passwords to CI logs. Writes credentials to a permission-restricted file or environment. Idempotent without overwriting existing accounts. |
 | **ADR-05** | Hardened Tenant Resolution | Hostname-only in production; strict rejection of header fallback in production. | `X-Tenant-Domain` allowed ONLY if `NODE_ENV === 'development'` and `ALLOW_HEADER_TENANT_RESOLVER === 'true'`. |
-| **ADR-06** | Inter-Service Trust | Ingress header stripping + Internal Signed Context Tokens. | Prevents header spoofing from the public internet while securing inter-pod communication. |
+| **ADR-06** | JWT Algorithm Isolation | Strict cryptographic segregation (RS256 for School, HS256 for legacy). | Enforces `alg: 'RS256'`, `iss: 'https://auth.schoolsaas.com'`, `aud: 'schoolsaas-api'`. Legacy HS256 tokens rejected by school endpoints. |
 | **ADR-07** | Branch Access Control | Hierarchical `branch_id` in `membership_roles`. | `branch_id IS NULL` grants school-wide scope; non-null `branch_id` restricts access to a specific campus. |
 | **ADR-08** | Session Invalidation | Refresh token family rotation + token hash storage. | Instant revocation of refresh credentials; short 15-minute access token lifespan limits exposure. |
-| **ADR-09** | Email Dispatch Mechanism | Pluggable notification adapter (Log-Sink in dev/test, SES in prod). | Zero external infrastructure dependencies during local development; seamless production cutover. |
-| **ADR-10** | RLS Scope Boundary | Enforce RLS **only** on Phase 1 tenant-owned tables in `auth_db`. | Accurately reflects Phase 1 scope. Future domain databases will independently implement RLS in their respective phases. |
+| **ADR-09** | Demo Data Hardening | Fictional school names and reserved RFC 2606 test domains (`@example.edu`). | Never uses real school names. Strictly prohibited in production environments. |
+| **ADR-10** | Database Privileges & RLS | Three-tier database role model (`postgres`, `school_schema_owner` [NOLOGIN], `school_app_user` [NOBYPASSRLS]). | Least-privilege grants; `audit_logs` has INSERT/SELECT only (no UPDATE/DELETE). Parameterized `set_config` with transaction scope. |

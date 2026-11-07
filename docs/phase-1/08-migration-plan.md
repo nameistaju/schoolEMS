@@ -1,9 +1,9 @@
 # Document 08: Database Schema Migration & Rollback Plan
 
-**Document Status:** DOCUMENTATION REVIEWED — AWAITING IMPLEMENTATION APPROVAL  
+**Document Status:** PHASE 1 IMPLEMENTATION PLAN CORRECTED — READY FOR DEVELOPMENT IMPLEMENTATION  
 **Classification:** Database Operations & DevOps Specification  
 **Phase:** 1 of 10 — Multi-Tenant Foundation & Identity Service  
-**Date:** March 2026 (Reviewed & Corrected)  
+**Date:** March 2026 (Final Security Corrections Applied)  
 
 ---
 
@@ -13,10 +13,11 @@ To move away from hardcoded raw SQL strings in application startup files while a
 
 ### Core Migration Principles
 1. **Scope Boundary:** Migrations apply **strictly to `auth_db`**. The e-commerce databases (`catalog_db`, `cart_db`, `orders_db`, `payments_db`) are not touched.
-2. **Idempotent & Transactional:** Every migration runs inside a PostgreSQL transaction (`BEGIN ... COMMIT`). If any statement fails, the entire migration rolls back automatically.
-3. **Reversible (Bi-Directional):** Every migration file must export both `up(knex)` and `down(knex)` methods.
-4. **Version-Tracked:** The `knex_migrations` table records executed migration timestamps, filenames, and execution batches.
-5. **Decoupled from Application Boot:** Migrations are executed via dedicated deployment scripts (`npm run migrate`) or Kubernetes PreSync Jobs, never on ordinary HTTP server startup.
+2. **Controlled Migration Role:** Migrations execute as `school_migration_user` (which belongs to `school_schema_owner`), not as the PostgreSQL superuser.
+3. **Idempotent & Transactional:** Every migration runs inside a PostgreSQL transaction (`BEGIN ... COMMIT`). If any statement fails, the entire migration rolls back automatically.
+4. **Reversible (Bi-Directional):** Every migration file must export both `up(knex)` and `down(knex)` methods.
+5. **Version-Tracked:** The `knex_migrations` table records executed migration timestamps, filenames, and execution batches.
+6. **Decoupled from Application Boot:** Migrations are executed via dedicated deployment scripts (`npm run migrate`) or Kubernetes PreSync Jobs, never on ordinary HTTP server startup.
 
 ---
 
@@ -40,7 +41,7 @@ projects/telugu-pickles/services/auth-service/migrations/
 
 ### 2.2 Migration 02: `create_users_and_memberships.js`
 * **`up(knex)`:**
-  - Non-destructively alters existing `users` table: adds `full_name` (copies from `name`), `status`, `email_verified_at`, `last_login_at`, and `updated_at`.
+  - Non-destructively alters existing `users` table: retains `name`, adds `full_name` (copies from `name`), widens `email` to `VARCHAR(255)`, adds `status`, `email_verified_at`, `last_login_at`, and `updated_at`.
   - Creates `user_tenant_memberships` table.
 * **`down(knex)`:** Drops `user_tenant_memberships`; reverts added columns from `users`.
 
@@ -58,7 +59,8 @@ projects/telugu-pickles/services/auth-service/migrations/
 
 ### 2.6 Migration 06: `enable_rls_and_policies.js`
 * **`up(knex)`:**
-  - Creates `school_app_user` database role with `NOBYPASSRLS`.
+  - Sets up the three-tier role structure: `school_schema_owner` (`NOLOGIN`), `school_migration_user`, `school_app_user` (`NOBYPASSRLS`).
+  - Sets table-specific grants: DML on operational tables; `INSERT, SELECT` ONLY on `audit_logs`.
   - Enables and forces RLS on Phase 1 tables: `branches`, `user_tenant_memberships`, and `membership_roles`.
   - Creates `tenant_isolation_policy` using `app.current_tenant_id`.
 * **`down(knex)`:**
@@ -67,14 +69,21 @@ projects/telugu-pickles/services/auth-service/migrations/
 
 ---
 
-## 3. Rollback & Emergency Procedures
+## 3. SuperAdmin Bootstrap & Demo Data Seeding Specifications
 
-If a migration fails or regressions are detected during deployment:
-```bash
-# Rollback the most recent migration batch
-npm run migrate:rollback
+### 3.1 Production SuperAdmin Bootstrap (`seeds/prod/01_superadmin_bootstrap.js`)
+* **Trigger:** `npm run seed:superadmin`
+* **Secret Guard:** Must require `BOOTSTRAP_SUPERADMIN_SECRET` (length $\ge 32$). If absent, aborts immediately.
+* **Credential Hygiene:**
+  * **Never prints generated passwords to CI/CD logs or stdout.**
+  * If `SUPERADMIN_PASSWORD` is supplied in the environment, validates complexity and uses it.
+  * If generated dynamically, writes credentials to a local permission-restricted file (`.bootstrap-credentials.json`, mode `0600`, listed in `.gitignore`).
+* **Idempotency:** Checks `SELECT id FROM users WHERE email = lower($1)`. If SuperAdmin already exists, exits successfully with notice: `SuperAdmin already exists, skipping creation`. Never overwrites existing credentials.
 
-# Verify database status
-npm run migrate:status
-```
-*Zero Data Loss Assurance: Migrations modifying existing columns use expand-and-contract patterns; columns are never dropped without a multi-release transition phase.*
+### 3.2 Development Fictional Demo School Seeding (`seeds/dev/02_demo_schools.js`)
+* **Trigger:** `npm run seed:demo-schools`
+* **Production Guard:** Throws an immediate exception if `NODE_ENV === 'production'`.
+* **Fictional Data (RFC 2606 Compliant):**
+  * **School A:** *Apex Academy* (`slug: apex-academy`), Campuses: `Main Campus`, `North Campus`. Admin: `admin@apex.example.edu`.
+  * **School B:** *Horizon International* (`slug: horizon-intl`), Campus: `Main Campus`. Admin: `admin@horizon.example.edu`.
+* **Idempotency:** `ON CONFLICT (slug) DO NOTHING`.

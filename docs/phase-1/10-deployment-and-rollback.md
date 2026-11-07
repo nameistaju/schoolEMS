@@ -1,9 +1,9 @@
 # Document 10: Deployment, Operational Runbook & Rollback Procedures
 
-**Document Status:** DOCUMENTATION REVIEWED — AWAITING IMPLEMENTATION APPROVAL  
+**Document Status:** PHASE 1 IMPLEMENTATION PLAN CORRECTED — READY FOR DEVELOPMENT IMPLEMENTATION  
 **Classification:** DevOps & Site Reliability Engineering (SRE)  
 **Phase:** 1 of 10 — Multi-Tenant Foundation & Identity Service  
-**Date:** March 2026 (Reviewed & Corrected)  
+**Date:** March 2026 (Final Security Corrections Applied)  
 
 ---
 
@@ -17,10 +17,10 @@ Phase 1 runs seamlessly inside the existing local development environment using 
 cd projects/telugu-pickles
 docker compose up -d postgres
 
-# 2. Execute Knex migrations strictly on auth_db
+# 2. Execute Knex migrations strictly on auth_db as migration identity
 npm --prefix services run migrate
 
-# 3. Seed initial SuperAdmin and Demo Schools (School A & School B)
+# 3. Seed initial SuperAdmin (requiring secret) and Fictional Demo Schools
 npm --prefix services run seed:superadmin
 npm --prefix services run seed:demo-schools
 
@@ -49,12 +49,14 @@ All sensitive credentials and asymmetric keys are injected via environment varia
 | :--- | :--- | :--- | :--- |
 | `NODE_ENV` | All | `development` / `production` | Enables production security checks and disables debug endpoints. |
 | `ALLOW_HEADER_TENANT_RESOLVER` | Dev Only | `true` in dev, **`false` in prod** | When `true` in local dev, allows `X-Tenant-Domain` fallback testing. |
+| `BOOTSTRAP_SUPERADMIN_SECRET` | Bootstrap | *(32+ char random string)* | Required to run SuperAdmin bootstrap seed. |
 | `PORT` | All | `4001` (Identity), `8080` (Gateway) | Service listening port. |
 | `PGHOST` | All | `postgres` (Docker) / `localhost` | PostgreSQL host endpoint. |
 | `PGPORT` | All | `5432` | PostgreSQL port. |
 | `PGUSER` | All | `school_app_user` | Non-privileged application database user (enforcing RLS). |
 | `PGPASSWORD` | All | *(Secure generated string)* | Application database user password. |
-| `PG_ADMIN_DB` | Dev/CI | `postgres` | Administrative database used only for migration execution. |
+| `PG_MIGRATION_USER` | Migration | `school_migration_user` | Migration database user (belongs to `school_schema_owner`). |
+| `PG_MIGRATION_PASSWORD` | Migration | *(Secure generated string)* | Migration database user password. |
 | `JWT_PRIVATE_KEY` | Identity | `-----BEGIN RSA PRIVATE KEY-----...` | 2048-bit RSA Private Key for signing JWTs. |
 | `JWT_PUBLIC_KEY` | Gateway/All | `-----BEGIN PUBLIC KEY-----...` | 2048-bit RSA Public Key for verifying JWT claims. |
 | `COOKIE_SECRET` | Gateway | *(48-character random string)* | Used for signing secure session cookies. |
@@ -72,7 +74,7 @@ In containerized and Kubernetes environments, schema migrations on `auth_db` are
                │
                ▼
    [ 1. PreSync Kubernetes Job ]
-   - Runs: npm run migrate (strictly on auth_db)
+   - Runs: npm run migrate (strictly on auth_db via school_migration_user)
    - Executes new versioned Knex migrations in PostgreSQL transaction
    - If migration fails -> Sync ABORTS immediately; pods are untouched
                │

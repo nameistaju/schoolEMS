@@ -1,9 +1,9 @@
-# Document 03: Tenant Isolation & Database Row-Level Security Design
+# Document 03: Tenant Isolation, Row-Level Security & Database Privilege Design
 
-**Document Status:** DOCUMENTATION REVIEWED — AWAITING IMPLEMENTATION APPROVAL  
+**Document Status:** PHASE 1 IMPLEMENTATION PLAN CORRECTED — READY FOR DEVELOPMENT IMPLEMENTATION  
 **Classification:** Security Architecture Specification  
 **Phase:** 1 of 10 — Multi-Tenant Foundation & Identity Service  
-**Date:** March 2026 (Reviewed & Corrected)  
+**Date:** March 2026 (Final Security Corrections Applied)  
 
 ---
 
@@ -24,95 +24,169 @@ Tenant isolation in Phase 1 establishes defense-in-depth across the network, API
     Strictly rejected in production.
 
 [ Layer 2: API & Gateway ]
-  - JWT Signature Validation: Gateway verifies RS256 signature using public key.
+  - JWT Signature & Algorithm Validation: Gateway verifies RS256 signature using public key.
+    Explicitly rejects legacy HS256 tokens on school endpoints.
   - Tenant Cross-Check: Rejects request if jwt.tenant_id != resolved_tenant_id.
 
 [ Layer 3: Application Middleware ]
   - Transaction Context: withTenantContext binds app.current_tenant_id per transaction.
+  - UUID Validation: Broad UUID regex validates format without restricting UUID versions.
   - Branch Scope: Asserts membership_roles authorize the target branch.
 
 [ Layer 4: Database Kernel (PostgreSQL) ]
-  - Non-privileged application role: school_app_user (NOBYPASSRLS).
+  - Three-Role Privilege Model: school_schema_owner (NOLOGIN), school_migration_user,
+    school_app_user (NOBYPASSRLS).
   - Row-Level Security (RLS) policies filter every SELECT, INSERT, UPDATE, DELETE.
   - Phase 1 Scope: Enforced strictly on tenant-owned tables in auth_db.
+  - Audit Protection: school_app_user granted INSERT, SELECT ONLY on audit_logs.
 ```
 
 ---
 
-## 2. Hardened Tenant Resolution Specification
+## 2. Hardened Three-Tier Database Role & Privilege Design
 
-### 2.1 Production vs. Development Resolution Rules
-To prevent malicious tenant impersonation, tenant resolution rules are strictly segregated by environment:
+To guarantee least-privilege access and ensure that RLS cannot be bypassed, table ownership is strictly decoupled from runtime execution:
 
-```javascript
-// Hardened Gateway Tenant Resolver Logic
-function resolveTenantFromRequest(req, tenantDomainCache) {
-  const host = (req.headers.host || '').split(':')[0].toLowerCase();
-  
-  // 1. Production Mode: Strict Hostname Resolution ONLY
-  if (process.env.NODE_ENV === 'production') {
-    // Strip any spoofed header immediately
-    delete req.headers['x-tenant-domain'];
-    delete req.headers['x-tenant-id'];
-    
-    const tenantId = tenantDomainCache.get(host);
-    if (!tenantId) {
-      throw new HttpError(400, 'Unrecognized or unverified school domain');
-    }
-    return tenantId;
-  }
-  
-  // 2. Development Mode: Allow *.localhost or controlled local testing fallback
-  if (process.env.NODE_ENV === 'development' && process.env.ALLOW_HEADER_TENANT_RESOLVER === 'true') {
-    const overrideDomain = req.headers['x-tenant-domain'];
-    if (overrideDomain) {
-      const tenantId = tenantDomainCache.get(overrideDomain.toLowerCase());
-      if (tenantId) return tenantId;
-    }
-  }
-  
-  // Fall back to standard host resolution
-  const tenantId = tenantDomainCache.get(host);
-  if (!tenantId) {
-    throw new HttpError(400, 'Unrecognized local school domain');
-  }
-  return tenantId;
-}
+```
+[ Role 1: Migration Identity (school_migration_user) ]
+  ├── Used strictly during CI/CD deployments and Knex migration runs
+  ├── Inherits ownership role: IN ROLE school_schema_owner
+  └── NEVER used for application runtime connection pooling
+            │
+            ▼
+[ Role 2: Schema Owner Group Role (school_schema_owner) ]
+  ├── NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE
+  ├── Owns public schema and all tables (tenants, branches, etc.)
+  ├── Holds DDL permissions (CREATE TABLE, ALTER TABLE, CREATE POLICY)
+  └── Cannot be logged into directly by any service
+            │
+            ▼
+[ Role 3: Runtime Application Role (school_app_user) ]
+  ├── LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS
+  ├── Used by the Node.js Express connection pool
+  ├── Does NOT own any tables; cannot alter tables; cannot disable RLS
+  └── Table-Specific Grants:
+        - DML (SELECT, INSERT, UPDATE, DELETE) on operational tables
+        - Append-Only (INSERT, SELECT ONLY) on audit_logs
 ```
 
-* **Production Guarantee:** In production, `X-Tenant-Domain` is unconditionally stripped and ignored. No client can bypass DNS/hostname-based tenant resolution.
-* **Never Trust Body or Params:** The application **never** trusts client-supplied `tenant_id` parameters in request bodies, query parameters, or arbitrary headers.
-
----
-
-## 3. Row-Level Security (RLS) Implementation Boundary
-
-### 3.1 Strict Phase 1 Boundary Definition
-* **Tables Subject to RLS in Phase 1:** Tenant RLS is enabled and enforced **strictly on tenant-owned tables in `auth_db`**:
-  * `branches`
-  * `user_tenant_memberships`
-  * `membership_roles`
-* **Exempt / Unaffected Tables in Phase 1:**
-  * Global platform tables in `auth_db`: `users`, `tenants`, `permissions`, `tenant_domains`, and `audit_logs` are managed via parameterized queries and platform authorization middleware.
-  * **E-Commerce Databases:** `catalog_db`, `cart_db`, `orders_db`, and `payments_db` **do not have RLS**. They remain legacy single-tenant databases dedicated to e-commerce.
-
-### 3.2 Database Roles & RLS Policies in `auth_db`
-
+### Exact Database Provisioning DDL:
 ```sql
--- 1. Create runtime application role with no bypass privileges
+-- 1. Create Schema Owner (NOLOGIN group role)
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_app_user') THEN
-    CREATE ROLE school_app_user WITH LOGIN PASSWORD 'runtime_secure_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_schema_owner') THEN
+    CREATE ROLE school_schema_owner WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
   END IF;
 END $$;
 
--- 2. Grant permissions
-GRANT USAGE ON SCHEMA public TO school_app_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO school_app_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO school_app_user;
+-- 2. Create Controlled Migration Identity
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_migration_user') THEN
+    CREATE ROLE school_migration_user WITH LOGIN PASSWORD 'migration_secure_pass' 
+      NOSUPERUSER NOCREATEDB NOCREATEROLE IN ROLE school_schema_owner;
+  END IF;
+END $$;
 
--- 3. Enable and Force RLS on Phase 1 Tenant Tables
+-- 3. Create Runtime Application Role (NOBYPASSRLS)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_app_user') THEN
+    CREATE ROLE school_app_user WITH LOGIN PASSWORD 'runtime_secure_pass' 
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END $$;
+
+-- 4. Schema Ownership
+ALTER SCHEMA public OWNER TO school_schema_owner;
+
+-- 5. Correct Default Privileges for Tables Created by school_schema_owner
+ALTER DEFAULT PRIVILEGES FOR ROLE school_schema_owner IN SCHEMA public 
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO school_app_user;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE school_schema_owner IN SCHEMA public 
+    GRANT USAGE, SELECT ON SEQUENCES TO school_app_user;
+
+-- 6. Table-Specific Least Privilege Grants on Operational Tables
+GRANT USAGE ON SCHEMA public TO school_app_user;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON 
+    tenants, branches, users, user_tenant_memberships, 
+    roles, permissions, role_permissions, membership_roles, 
+    tenant_domains, refresh_tokens TO school_app_user;
+
+-- 7. Audit Logs Protection: Append-Only (NO UPDATE, NO DELETE, NO TRUNCATE)
+GRANT INSERT, SELECT ON audit_logs TO school_app_user;
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM school_app_user;
+```
+
+---
+
+## 3. Parameterized Transaction-Scoped `set_config`
+
+### 3.1 Implementation Specification (`services/common/db.js`)
+
+Broad UUID validation accepts valid RFC 4122 / RFC 9562 UUID formats (versions 1 through 8):
+$$\text{UUID\_REGEX} = \texttt{/\textasciicircum}[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}\$\texttt{/i}$$
+
+```javascript
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function withTenantContext(pool, tenantId, callback) {
+  if (!tenantId || typeof tenantId !== 'string' || !UUID_REGEX.test(tenantId)) {
+    throw new Error('Tenant context error: valid UUID format is required');
+  }
+
+  const client = await pool.connect();
+  try {
+    // 1. Begin explicit transaction
+    await client.query('BEGIN');
+    
+    // 2. Parameterized transaction-scoped context setting (is_local = true)
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_tenant_id', tenantId]);
+    
+    // 3. Execute domain queries
+    const result = await callback(client);
+    
+    // 4. Commit transaction (cleans up transaction-scoped setting)
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    // 5. Rollback on failure (cleans up transaction-scoped setting)
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    // 6. Release physical connection back to pool with clean session state
+    client.release();
+  }
+}
+```
+
+### 3.2 Verification of Context Cleanup & Connection Reuse
+* **Commit Cleanup:** When `COMMIT` is executed, PostgreSQL automatically resets `app.current_tenant_id` to its pre-transaction state (`NULL` or default).
+* **Rollback Cleanup:** When `ROLLBACK` is executed, all transaction modifications and local `set_config` parameters are completely discarded.
+* **Physical Connection Reuse:** When connection $C_1$ is released and subsequently checked out by another request (or an unscoped background worker), `current_setting('app.current_tenant_id', true)` evaluates to `NULL`. Unscoped queries return **0 rows** against RLS-protected tables.
+
+---
+
+## 4. Limitations of Application-Controlled Tenant Context
+
+> [!CAUTION]
+> **ARCHITECTURAL SECURITY BOUNDARY:**
+> PostgreSQL `set_config('app.current_tenant_id', ...)` relies on the application supplying the correct tenant UUID.
+> 1. PostgreSQL does not independently verify whether the connecting user is legally authorized to represent that tenant ID.
+> 2. If an application bug, arbitrary SQL injection, or compromised microservice sets the wrong tenant UUID, PostgreSQL will enforce the *supplied* tenant UUID, not the *intended* one.
+> 3. Therefore, RLS is a **secondary defense** preventing accidental data leakage and query omission bugs. The **primary boundary** remains cryptographic JWT verification, strict role authorization middleware, and parameterized SQL queries.
+
+---
+
+## 5. Row-Level Security Policies on Phase 1 Tables
+
+RLS is enabled and forced on the Phase 1 tenant-owned tables in `auth_db`:
+
+```sql
+-- 1. Branches Table
 ALTER TABLE branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE branches FORCE ROW LEVEL SECURITY;
 
@@ -122,6 +196,7 @@ CREATE POLICY tenant_isolation_branches ON branches
     USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)
     WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
 
+-- 2. User Tenant Memberships Table
 ALTER TABLE user_tenant_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_tenant_memberships FORCE ROW LEVEL SECURITY;
 
@@ -131,6 +206,7 @@ CREATE POLICY tenant_isolation_memberships ON user_tenant_memberships
     USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)
     WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
 
+-- 3. Membership Roles Table
 ALTER TABLE membership_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE membership_roles FORCE ROW LEVEL SECURITY;
 
@@ -150,28 +226,3 @@ CREATE POLICY tenant_isolation_membership_roles ON membership_roles
       )
     );
 ```
-
----
-
-## 4. How Future Domain Services Will Independently Enforce RLS
-
-When downstream school domain services are implemented in future phases, each service will connect to its own dedicated database and independently configure its own RLS policies:
-
-```
-[ Phase 3: academic-service ] ──► [ school_academic_db ]
-  * Tables: classes, sections, subjects, syllabi
-  * Each table contains: tenant_id UUID NOT NULL
-  * RLS Policy: USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
-
-[ Phase 2, 4, 5: student-records-service ] ──► [ school_records_db ]
-  * Tables: students, staff, attendance_logs, exams, student_grades
-  * Each table contains: tenant_id UUID NOT NULL, branch_id UUID
-  * RLS Policy: USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
-
-[ Phase 6: finance-service ] ──► [ school_finance_db ]
-  * Tables: fee_structures, fee_invoices, fee_payments
-  * Each table contains: tenant_id UUID NOT NULL
-  * RLS Policy: USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
-```
-
-Each service will independently wrap its database transactions with `withTenantContext(pool, req.verifiedTenantId, callback)`, ensuring that database-level isolation is uniform, verified, and complete across all future microservices.
