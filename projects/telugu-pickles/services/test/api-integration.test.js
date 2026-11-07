@@ -133,6 +133,13 @@ test.before(async () => {
 
   const superAdminId = saUsers[0].id;
 
+  // Assign to platform_admins
+  await pool.query(`
+    INSERT INTO platform_admins (user_id)
+    VALUES ($1)
+    ON CONFLICT (user_id) DO NOTHING
+  `, [superAdminId]);
+
   superAdminToken = signSchoolToken({
     sub: superAdminId,
     roles: ['SuperAdmin'],

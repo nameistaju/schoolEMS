@@ -47,7 +47,14 @@ async function bootstrap() {
       );
 
       if (existingUsers.length > 0) {
-        console.log(`[BOOTSTRAP] SuperAdmin account (${superAdminEmail}) already exists. Skipping creation.`);
+        const userId = existingUsers[0].id;
+        await client.query(
+          `INSERT INTO platform_admins (user_id)
+           VALUES ($1)
+           ON CONFLICT (user_id) DO NOTHING`,
+          [userId]
+        );
+        console.log(`[BOOTSTRAP] SuperAdmin account (${superAdminEmail}) already exists and verified in platform_admins.`);
         return;
       }
 
@@ -65,14 +72,20 @@ async function bootstrap() {
       );
       const superAdminUser = newUsers[0];
 
-      // 4. Find platform SuperAdmin role
-      const { rows: roles } = await client.query(
-        `SELECT id FROM roles WHERE role_key = 'SuperAdmin' AND tenant_id IS NULL`
+      // 4. Assign to platform_admins table
+      await client.query(
+        `INSERT INTO platform_admins (user_id)
+         VALUES ($1)
+         ON CONFLICT (user_id) DO NOTHING`,
+        [superAdminUser.id]
       );
 
-      if (roles.length === 0) {
-        throw new Error('SuperAdmin platform role not found in database. Run migrations first.');
-      }
+      // 5. Audit Log
+      await client.query(
+        `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id)
+         VALUES (NULL, $1, 'platform_admin.bootstrap', 'platform_admin', $1)`,
+        [superAdminUser.id]
+      );
 
       await client.query('COMMIT');
 

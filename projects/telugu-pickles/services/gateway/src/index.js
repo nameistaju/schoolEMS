@@ -39,10 +39,22 @@ const ROUTES = [
   { prefix: '/api/orders', upstream: 'order' },
 ];
 
+const GATEWAY_INTERNAL_SECRET = process.env.GATEWAY_INTERNAL_SECRET || 'internal-gateway-secret-dev-2026';
+
 // --- security headers & tenant header hardening ---
 app.use((req, res, next) => {
   // Enforce tenant resolution boundary: Strip spoofable external tenant headers
   delete req.headers['x-forwarded-host'];
+  delete req.headers['x-gateway-secret'];
+  delete req.headers['x-internal-gateway'];
+
+  // Case-insensitive stripping of all x-verified-* headers (Finding L-02)
+  for (const headerName of Object.keys(req.headers)) {
+    if (headerName.toLowerCase().startsWith('x-verified-')) {
+      delete req.headers[headerName];
+    }
+  }
+
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_HEADER_TENANT_RESOLVER !== 'true') {
     delete req.headers['x-tenant-domain'];
     delete req.headers['x-tenant-id'];
@@ -109,6 +121,7 @@ for (const { prefix, upstream } of ROUTES) {
       proxyReq: (proxyReq, req) => {
         proxyReq.setHeader('X-Request-Id', req.id);
         proxyReq.setHeader('X-Forwarded-Prefix', '/api');
+        proxyReq.setHeader('X-Gateway-Secret', GATEWAY_INTERNAL_SECRET);
         if (req.headers.host) {
           proxyReq.setHeader('X-Forwarded-Host', req.headers.host);
         }

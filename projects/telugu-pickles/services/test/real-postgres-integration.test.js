@@ -68,17 +68,18 @@ test('PostgreSQL Migrations 01-06 execute cleanly against disposable database', 
     // Run all migrations
     const [batchNo, log] = await db.migrate.latest();
     assert.strictEqual(batchNo, 1);
-    assert.strictEqual(log.length, 6, 'All 6 migrations must run');
+    assert.strictEqual(log.length, 7, 'All 7 migrations must run');
 
-    // Verify knex_migrations recorded all 6 migrations in sequence
+    // Verify knex_migrations recorded all 7 migrations in sequence
     const migrations = await db('knex_migrations').select('name').orderBy('id', 'asc');
-    assert.strictEqual(migrations.length, 6);
+    assert.strictEqual(migrations.length, 7);
     assert.match(migrations[0].name, /create_tenants_and_branches/);
     assert.match(migrations[1].name, /create_users_and_memberships/);
     assert.match(migrations[2].name, /create_rbac_tables/);
     assert.match(migrations[3].name, /create_domains_and_sessions/);
     assert.match(migrations[4].name, /create_audit_logs/);
     assert.match(migrations[5].name, /enable_rls_and_policies/);
+    assert.match(migrations[6].name, /create_platform_admins/);
 
     // Verify backward compatibility on legacy users table
     const legacyUser = await db('users').where({ email: 'demo@telugupickles.in' }).first();
@@ -344,12 +345,12 @@ test('Knex Migration Rollback: Rolls back migration 06 and re-applies cleanly', 
     // Rollback batch 1
     const [rollbackBatch, rollbackLog] = await db.migrate.rollback();
     assert.strictEqual(rollbackBatch, 1);
-    assert.strictEqual(rollbackLog.length, 6);
+    assert.strictEqual(rollbackLog.length, 7);
 
     // Re-apply latest migrations to leave test database in complete state
     const [reapplyBatch, reapplyLog] = await db.migrate.latest();
     assert.strictEqual(reapplyBatch, 1);
-    assert.strictEqual(reapplyLog.length, 6);
+    assert.strictEqual(reapplyLog.length, 7);
   } finally {
     await db.destroy();
   }

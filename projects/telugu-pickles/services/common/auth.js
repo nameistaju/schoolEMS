@@ -46,18 +46,88 @@ const SCHOOL_ACCESS_TOKEN_TTL = process.env.SCHOOL_ACCESS_TOKEN_TTL || '15m';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function validateKeypair(privKeyPem, pubKeyPem) {
+  if (!privKeyPem || typeof privKeyPem !== 'string') {
+    throw new Error('JWT_PRIVATE_KEY is missing or invalid');
+  }
+  if (!pubKeyPem || typeof pubKeyPem !== 'string') {
+    throw new Error('JWT_PUBLIC_KEY is missing or invalid');
+  }
+
+  let privateKeyObj;
+  try {
+    privateKeyObj = crypto.createPrivateKey(privKeyPem);
+  } catch (err) {
+    throw new Error(`Invalid PEM format for JWT_PRIVATE_KEY: ${err.message}`);
+  }
+
+  let publicKeyObj;
+  try {
+    publicKeyObj = crypto.createPublicKey(pubKeyPem);
+  } catch (err) {
+    throw new Error(`Invalid PEM format for JWT_PUBLIC_KEY: ${err.message}`);
+  }
+
+  // Cryptographically verify matching keypair
+  try {
+    const testPayload = Buffer.from('schoolsaas-keypair-verify-' + Date.now());
+    const sign = crypto.createSign('SHA256');
+    sign.update(testPayload);
+    sign.end();
+    const signature = sign.sign(privateKeyObj);
+
+    const verify = crypto.createVerify('SHA256');
+    verify.update(testPayload);
+    verify.end();
+    if (!verify.verify(publicKeyObj, signature)) {
+      throw new Error('Configured JWT_PRIVATE_KEY and JWT_PUBLIC_KEY do not form a matching keypair');
+    }
+  } catch (err) {
+    throw new Error(`Keypair validation failed: ${err.message}`);
+  }
+}
+
 let privateKey = process.env.JWT_PRIVATE_KEY;
 let publicKey = process.env.JWT_PUBLIC_KEY;
 
-if (!privateKey || !publicKey) {
-  // Generate development/ephemeral RSA 2048 keypair
-  const keyPair = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  });
-  privateKey = keyPair.privateKey;
-  publicKey = keyPair.publicKey;
+if (process.env.NODE_ENV === 'production') {
+  if (!privateKey || !publicKey) {
+    throw new Error('Production security violation: JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be configured in production');
+  }
+  validateKeypair(privateKey, publicKey);
+} else {
+  if (privateKey && publicKey) {
+    validateKeypair(privateKey, publicKey);
+  } else if (!privateKey && !publicKey) {
+    // Generate development/ephemeral RSA 2048 keypair
+    const keyPair = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    privateKey = keyPair.privateKey;
+    publicKey = keyPair.publicKey;
+  } else {
+    throw new Error('Both JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be provided together');
+  }
+}
+
+const TRUSTED_KEYS = new Map([
+  [SCHOOL_KEY_ID, publicKey],
+]);
+
+function registerTrustedKey(kid, publicKeyPem) {
+  if (!kid || typeof kid !== 'string') throw new Error('kid must be a non-empty string');
+  try {
+    crypto.createPublicKey(publicKeyPem);
+  } catch (err) {
+    throw new Error(`Invalid PEM format for rotated public key: ${err.message}`);
+  }
+  TRUSTED_KEYS.set(kid, publicKeyPem);
+}
+
+function getTrustedKey(kid) {
+  return TRUSTED_KEYS.get(kid) || null;
 }
 
 function getPublicKeyPem() {
@@ -111,11 +181,13 @@ function verifySchoolToken(token) {
     throw new Error('Invalid token algorithm: strictly RS256 required');
   }
 
-  if (decodedHeader.header.kid !== SCHOOL_KEY_ID) {
-    throw new Error(`Untrusted or invalid key ID (kid): ${decodedHeader.header.kid}`);
+  const tokenKid = decodedHeader.header.kid;
+  const signingPublicKey = getTrustedKey(tokenKid);
+  if (!signingPublicKey) {
+    throw new Error(`Untrusted or invalid key ID (kid): ${tokenKid}`);
   }
 
-  const claims = jwt.verify(token, publicKey, {
+  const claims = jwt.verify(token, signingPublicKey, {
     algorithms: ['RS256'],
     issuer: SCHOOL_ISSUER,
     audience: SCHOOL_AUDIENCE,
@@ -195,6 +267,9 @@ module.exports = {
   hashToken,
   generateRefreshToken,
   getPublicKeyPem,
+  validateKeypair,
+  registerTrustedKey,
+  getTrustedKey,
   SCHOOL_ISSUER,
   SCHOOL_AUDIENCE,
   SCHOOL_KEY_ID,

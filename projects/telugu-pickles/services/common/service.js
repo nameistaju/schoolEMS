@@ -5,6 +5,7 @@
 //   - /health/live (process up) and /health/ready (dependencies OK)
 //   - optional chaos injection for the AIOps demo
 //   - consistent JSON errors and graceful shutdown on SIGTERM (Kubernetes)
+try { require('dotenv').config(); } catch {}
 const crypto = require('crypto');
 const express = require('express');
 const { createLogger } = require('./logger');

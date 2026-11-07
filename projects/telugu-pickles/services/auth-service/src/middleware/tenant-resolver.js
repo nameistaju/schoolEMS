@@ -5,6 +5,8 @@
 
 const { sendError } = require('../utils/response');
 
+const GATEWAY_INTERNAL_SECRET = process.env.GATEWAY_INTERNAL_SECRET || 'internal-gateway-secret-dev-2026';
+
 function resolveDomainFromHost(hostHeader) {
   if (!hostHeader) return null;
   // Remove port if present (e.g. "apex.example:4001" -> "apex.example")
@@ -15,6 +17,9 @@ function createTenantResolver(pool, options = { required: true }) {
   return async (req, res, next) => {
     let domain = null;
 
+    // Validate gateway trust boundary (Finding M-02)
+    const isTrustedGateway = req.headers['x-gateway-secret'] === GATEWAY_INTERNAL_SECRET;
+
     // Strict Inbound Header Rules:
     // Only permit X-Tenant-Domain if strictly in development AND explicitly configured
     if (
@@ -23,9 +28,12 @@ function createTenantResolver(pool, options = { required: true }) {
       req.headers['x-tenant-domain']
     ) {
       domain = String(req.headers['x-tenant-domain']).toLowerCase().trim();
+    } else if (isTrustedGateway && req.headers['x-forwarded-host']) {
+      // Trust X-Forwarded-Host strictly when request originated from trusted Gateway
+      domain = resolveDomainFromHost(req.headers['x-forwarded-host']);
     } else {
-      // In production (and default dev), host header (or verified gateway forwarded host) is authoritative
-      domain = resolveDomainFromHost(req.headers['x-forwarded-host'] || req.headers['host']);
+      // Direct host header fallback (ignoring untrusted x-forwarded-host)
+      domain = resolveDomainFromHost(req.headers['host']);
     }
 
     if (!domain) {

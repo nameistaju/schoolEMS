@@ -52,6 +52,13 @@ function createAuthRouter(pool, tenantResolver) {
       let roles = [];
       const tenant = req.tenant;
 
+      // Check if user is a verified platform administrator
+      const { rows: platformAdminRows } = await pool.query(
+        'SELECT id FROM platform_admins WHERE user_id = $1',
+        [user.id]
+      );
+      const isSuperAdmin = platformAdminRows.length > 0;
+
       if (tenant) {
         // Assert active membership in resolved tenant
         const { rows: memberRows } = await pool.query(
@@ -62,18 +69,6 @@ function createAuthRouter(pool, tenantResolver) {
         );
 
         membership = memberRows[0];
-
-        // Also check if user has platform SuperAdmin role
-        const { rows: superAdminRows } = await pool.query(
-          `SELECT r.role_key
-           FROM roles r
-           JOIN membership_roles mr ON mr.role_id = r.id
-           JOIN user_tenant_memberships utm ON utm.id = mr.membership_id
-           WHERE utm.user_id = $1 AND r.role_key = 'SuperAdmin' AND r.tenant_id IS NULL`,
-          [user.id]
-        );
-
-        const isSuperAdmin = superAdminRows.length > 0;
 
         if (!membership && !isSuperAdmin) {
           return sendError(res, 'MEMBERSHIP_REQUIRED', 'You do not have access to this school organization', 403, null, req);
@@ -100,16 +95,10 @@ function createAuthRouter(pool, tenantResolver) {
         }
       } else {
         // Platform level login (SuperAdmin only)
-        const { rows: saRows } = await pool.query(
-          `SELECT r.role_key
-           FROM roles r
-           WHERE r.role_key = 'SuperAdmin' AND r.tenant_id IS NULL`
-        );
-        if (saRows.length > 0) {
-          roles = ['SuperAdmin'];
-        } else {
-          return sendError(res, 'TENANT_REQUIRED', 'School tenant context required', 400, null, req);
+        if (!isSuperAdmin) {
+          return sendError(res, 'TENANT_REQUIRED', 'School tenant context required for non-platform users', 400, null, req);
         }
+        roles = ['SuperAdmin'];
       }
 
       // 4. Generate RS256 Access Token
@@ -140,8 +129,8 @@ function createAuthRouter(pool, tenantResolver) {
       // 7. Audit Log
       await pool.query(
         `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id, user_agent)
-         VALUES ($1, $2, 'auth.login.success', 'user', $2, $3)`,
-        [tenant?.id || null, user.id, req.headers['user-agent'] || null]
+         VALUES ($1, $2, 'auth.login.success', 'user', $3, $4)`,
+        [tenant?.id || null, user.id, String(user.id), req.headers['user-agent'] || null]
       );
 
       // Set cookie: tp_refresh
@@ -242,6 +231,12 @@ function createAuthRouter(pool, tenantResolver) {
           tenantId = memberRows[0].tenant_id;
           roles = memberRows.map((r) => r.role_key).filter(Boolean);
         }
+      }
+
+      // Assert platform admin status
+      const { rows: paRows } = await pool.query('SELECT 1 FROM platform_admins WHERE user_id = $1', [session.user_id]);
+      if (paRows.length > 0 && !roles.includes('SuperAdmin')) {
+        roles.push('SuperAdmin');
       }
 
       await pool.query('COMMIT');

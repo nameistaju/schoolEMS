@@ -4,33 +4,41 @@
  */
 
 exports.up = async function (knex) {
+  const migPass = process.env.PG_MIGRATION_PASSWORD || (process.env.NODE_ENV === 'production' ? null : 'migration_secure_pass');
+  const appPass = process.env.PG_APP_PASSWORD || (process.env.NODE_ENV === 'production' ? null : 'runtime_secure_pass');
+
+  if (process.env.NODE_ENV === 'production') {
+    const hasMigUser = await knex.raw("SELECT 1 FROM pg_roles WHERE rolname = 'school_migration_user'");
+    const hasAppUser = await knex.raw("SELECT 1 FROM pg_roles WHERE rolname = 'school_app_user'");
+    if (hasMigUser.rows.length === 0 && !migPass) {
+      throw new Error('Production database migration requires PG_MIGRATION_PASSWORD when provisioning school_migration_user');
+    }
+    if (hasAppUser.rows.length === 0 && !appPass) {
+      throw new Error('Production database migration requires PG_APP_PASSWORD when provisioning school_app_user');
+    }
+  }
+
+  // 1. Create Schema Owner (NOLOGIN group role)
+  const { rows: ownerRows } = await knex.raw("SELECT 1 FROM pg_roles WHERE rolname = 'school_schema_owner'");
+  if (ownerRows.length === 0) {
+    await knex.raw('CREATE ROLE school_schema_owner WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE');
+  }
+
+  // 2. Create Controlled Migration Identity (securely provisioned outside source code)
+  const { rows: migRows } = await knex.raw("SELECT 1 FROM pg_roles WHERE rolname = 'school_migration_user'");
+  if (migRows.length === 0 && migPass) {
+    const safeMigPass = migPass.replace(/'/g, "''");
+    await knex.raw(`CREATE ROLE school_migration_user WITH LOGIN PASSWORD '${safeMigPass}' NOSUPERUSER NOCREATEDB NOCREATEROLE IN ROLE school_schema_owner`);
+  }
+
+  // 3. Create Runtime Application Role (securely provisioned outside source code)
+  const { rows: appRows } = await knex.raw("SELECT 1 FROM pg_roles WHERE rolname = 'school_app_user'");
+  if (appRows.length === 0 && appPass) {
+    const safeAppPass = appPass.replace(/'/g, "''");
+    await knex.raw(`CREATE ROLE school_app_user WITH LOGIN PASSWORD '${safeAppPass}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
+  }
+
   await knex.raw(`
-    -- 1. Create Schema Owner (NOLOGIN group role)
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_schema_owner') THEN
-        CREATE ROLE school_schema_owner WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
-      END IF;
-    END $$;
-
-    -- 2. Create Controlled Migration Identity
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_migration_user') THEN
-        CREATE ROLE school_migration_user WITH LOGIN PASSWORD 'migration_secure_pass'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE IN ROLE school_schema_owner;
-      END IF;
-    END $$;
-
-    -- 3. Create Runtime Application Role (NOBYPASSRLS)
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'school_app_user') THEN
-        CREATE ROLE school_app_user WITH LOGIN PASSWORD 'runtime_secure_pass'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-      END IF;
-    END $$;
-
     -- 4. Schema Ownership & Default Privileges
     DO $$
     BEGIN

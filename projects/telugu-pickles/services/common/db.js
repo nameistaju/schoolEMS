@@ -28,10 +28,20 @@ async function withRetry(fn, { attempts = 30, delayMs = 2000, log, what }) {
   throw lastErr;
 }
 
+const defaultPgConfig = {
+  host: process.env.PGHOST || '127.0.0.1',
+  port: Number(process.env.PGPORT || 5432),
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || 'postgres',
+};
+
 async function ensureDatabase(dbName, log) {
   await withRetry(
     async () => {
-      const admin = new Client({ database: process.env.PG_ADMIN_DB || 'postgres' });
+      const admin = new Client({
+        ...defaultPgConfig,
+        database: process.env.PG_ADMIN_DB || 'postgres',
+      });
       await admin.connect();
       try {
         const { rowCount } = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
@@ -55,6 +65,7 @@ async function ensureDatabase(dbName, log) {
 async function initDatabase({ dbName, migrations = [], seed, log }) {
   await ensureDatabase(dbName, log);
   const pool = new Pool({
+    ...defaultPgConfig,
     database: dbName,
     max: Number(process.env.DB_POOL_MAX || 10),
     idleTimeoutMillis: 30000,

@@ -10,6 +10,19 @@ const { requireSchoolAuth } = require('../../../../common/auth');
 const { withTenantContext } = require('../../../../common/db');
 const { sendSuccess, sendError } = require('../../utils/response');
 
+const ASSIGNABLE_ROLES_POLICY = {
+  SuperAdmin: ['SchoolAdmin', 'Principal', 'Teacher', 'Accountant', 'Student', 'Parent'],
+  SchoolAdmin: ['Principal', 'Teacher', 'Accountant', 'Student', 'Parent'],
+  Principal: ['Teacher', 'Student', 'Parent'],
+};
+
+function getAllowedAssignableRoles(userRoles = []) {
+  if (userRoles.includes('SuperAdmin')) return ASSIGNABLE_ROLES_POLICY.SuperAdmin;
+  if (userRoles.includes('SchoolAdmin')) return ASSIGNABLE_ROLES_POLICY.SchoolAdmin;
+  if (userRoles.includes('Principal')) return ASSIGNABLE_ROLES_POLICY.Principal;
+  return [];
+}
+
 function createMembershipsRouter(pool) {
   const router = express.Router();
 
@@ -18,8 +31,8 @@ function createMembershipsRouter(pool) {
     const tenantId = req.user.tenant_id;
     if (!tenantId) return sendError(res, 'TENANT_REQUIRED', 'Tenant context required', 400, null, req);
 
-    const isAuthorized = req.user.roles?.some((r) => ['SuperAdmin', 'SchoolAdmin', 'Principal'].includes(r));
-    if (!isAuthorized) {
+    const allowedRoles = getAllowedAssignableRoles(req.user.roles || []);
+    if (allowedRoles.length === 0) {
       return sendError(res, 'FORBIDDEN', 'Insufficient permissions: admin role required to invite members', 403, null, req);
     }
 
@@ -28,10 +41,22 @@ function createMembershipsRouter(pool) {
       return sendError(res, 'VALIDATION_ERROR', 'Email and fullName are required', 400, null, req);
     }
 
+    if (roleKey === 'SuperAdmin' || !allowedRoles.includes(roleKey)) {
+      return sendError(res, 'FORBIDDEN', `Role assignment denied: Insufficient privileges to assign role '${roleKey}'`, 403, null, req);
+    }
+
     const cleanEmail = String(email).trim().toLowerCase();
 
     try {
       const result = await withTenantContext(pool, tenantId, async (client) => {
+        // Validate branch belongs to current tenant if specified
+        if (branchId) {
+          const { rows: bRows } = await client.query('SELECT id FROM branches WHERE id = $1 AND tenant_id = $2', [branchId, tenantId]);
+          if (!bRows[0]) {
+            throw new Error('Specified branch does not exist in this school');
+          }
+        }
+
         // 1. Find or create user
         let user;
         const { rows: existingUsers } = await client.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
@@ -60,9 +85,9 @@ function createMembershipsRouter(pool) {
         );
         const membership = membershipRows[0];
 
-        // 3. Find Role
+        // 3. Find Role (SuperAdmin strictly excluded from tenant lookups)
         const { rows: roleRows } = await client.query(
-          `SELECT id, role_key FROM roles WHERE role_key = $1 AND (tenant_id = $2 OR tenant_id IS NULL) LIMIT 1`,
+          `SELECT id, role_key FROM roles WHERE role_key = $1 AND (tenant_id = $2 OR tenant_id IS NULL) AND role_key <> 'SuperAdmin' LIMIT 1`,
           [roleKey, tenantId]
         );
 
@@ -75,6 +100,13 @@ function createMembershipsRouter(pool) {
             [membership.id, roleId, branchId || null, req.user.sub]
           );
         }
+
+        // 4. Audit Log
+        await client.query(
+          `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id, metadata)
+           VALUES ($1, $2, 'membership.invite', 'membership', $3, $4)`,
+          [tenantId, req.user.sub, String(membership.id), JSON.stringify({ roleKey, invitedEmail: cleanEmail, branchId })]
+        );
 
         return { user, membership, roleKey };
       });
@@ -206,24 +238,45 @@ function createMembershipsRouter(pool) {
   // POST /:id/roles (Assign role)
   router.post('/:id/roles', requireSchoolAuth(), async (req, res) => {
     const tenantId = req.user.tenant_id;
-    const isAuthorized = req.user.roles?.some((r) => ['SuperAdmin', 'SchoolAdmin'].includes(r));
-    if (!isAuthorized) return sendError(res, 'FORBIDDEN', 'Insufficient permissions', 403, null, req);
+    const allowedRoles = getAllowedAssignableRoles(req.user.roles || []);
+    if (allowedRoles.length === 0) {
+      return sendError(res, 'FORBIDDEN', 'Insufficient permissions to assign roles', 403, null, req);
+    }
 
     const { roleKey, branchId = null } = req.body || {};
     if (!roleKey) return sendError(res, 'VALIDATION_ERROR', 'roleKey is required', 400, null, req);
+
+    if (roleKey === 'SuperAdmin' || !allowedRoles.includes(roleKey)) {
+      return sendError(res, 'FORBIDDEN', `Role assignment denied: Insufficient privileges to assign role '${roleKey}'`, 403, null, req);
+    }
 
     try {
       const result = await withTenantContext(pool, tenantId, async (client) => {
         // Assert member belongs to tenant
         const { rows: memRows } = await client.query(
-          'SELECT id FROM user_tenant_memberships WHERE id = $1 AND tenant_id = $2',
+          'SELECT id, user_id FROM user_tenant_memberships WHERE id = $1 AND tenant_id = $2',
           [req.params.id, tenantId]
         );
         if (!memRows[0]) throw new Error('Member not found in current school');
 
-        // Look up role
+        // Prevent self-escalation / self-assignment of roles
+        if (memRows[0].user_id === req.user.sub) {
+          const err = new Error('Self-assignment of roles is strictly prohibited');
+          err.statusCode = 403;
+          throw err;
+        }
+
+        // Validate branch if specified
+        if (branchId) {
+          const { rows: bRows } = await client.query('SELECT id FROM branches WHERE id = $1 AND tenant_id = $2', [branchId, tenantId]);
+          if (!bRows[0]) {
+            throw new Error('Specified branch does not exist in this school');
+          }
+        }
+
+        // Look up role (SuperAdmin excluded)
         const { rows: roleRows } = await client.query(
-          'SELECT id FROM roles WHERE role_key = $1 AND (tenant_id = $2 OR tenant_id IS NULL)',
+          `SELECT id FROM roles WHERE role_key = $1 AND (tenant_id = $2 OR tenant_id IS NULL) AND role_key <> 'SuperAdmin'`,
           [roleKey, tenantId]
         );
         if (!roleRows[0]) throw new Error(`Role ${roleKey} does not exist`);
@@ -238,12 +291,20 @@ function createMembershipsRouter(pool) {
           [req.params.id, roleId, branchId || null, req.user.sub]
         );
 
+        // Audit Log
+        await client.query(
+          `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id, metadata)
+           VALUES ($1, $2, 'membership.role_assigned', 'membership_role', $3, $4)`,
+          [tenantId, req.user.sub, String(req.params.id), JSON.stringify({ roleKey, roleId, branchId })]
+        );
+
         return assigned[0] || { message: 'Role already assigned' };
       });
 
       return sendSuccess(res, { assignment: result }, 201, req);
     } catch (err) {
-      return sendError(res, 'INTERNAL_ERROR', err.message, 400, null, req);
+      const code = err.statusCode || (err.message.includes('prohibited') ? 403 : 400);
+      return sendError(res, code === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR', err.message, code, null, req);
     }
   });
 
@@ -255,16 +316,37 @@ function createMembershipsRouter(pool) {
 
     try {
       await withTenantContext(pool, tenantId, async (client) => {
+        // Assert member belongs to tenant
+        const { rows: memRows } = await client.query(
+          'SELECT id, user_id FROM user_tenant_memberships WHERE id = $1 AND tenant_id = $2',
+          [req.params.id, tenantId]
+        );
+        if (!memRows[0]) throw new Error('Member not found in current school');
+
+        if (memRows[0].user_id === req.user.sub && !req.user.roles?.includes('SuperAdmin')) {
+          const err = new Error('Self-removal of administrative roles is prohibited');
+          err.statusCode = 403;
+          throw err;
+        }
+
         await client.query(
           `DELETE FROM membership_roles
            WHERE membership_id = $1 AND role_id = $2`,
           [req.params.id, req.params.roleId]
         );
+
+        // Audit Log
+        await client.query(
+          `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id, metadata)
+           VALUES ($1, $2, 'membership.role_revoked', 'membership_role', $3, $4)`,
+          [tenantId, req.user.sub, String(req.params.id), JSON.stringify({ roleId: req.params.roleId })]
+        );
       });
 
       return sendSuccess(res, { message: 'Role removed from member' }, 200, req);
     } catch (err) {
-      return sendError(res, 'INTERNAL_ERROR', err.message, 500, null, req);
+      const code = err.statusCode || 500;
+      return sendError(res, code === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR', err.message, code, null, req);
     }
   });
 
