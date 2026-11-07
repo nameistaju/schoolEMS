@@ -2,18 +2,13 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import PickleJar from '../components/PickleJar';
 
 function AuthShell({ title, te, children }) {
   return (
     <div className="container section auth-wrap">
-      <div className="auth-art">
-        <PickleJar product={{ slug: 'auth', name: 'Avakaya', localName: 'ఆవకాయ', category: 'veg', color: '#B5381F' }} size={150} />
-        <PickleJar product={{ slug: 'auth2', name: 'Royyala', localName: 'రొయ్యల పచ్చడి', category: 'non-veg', color: '#B0451E' }} size={120} />
-      </div>
       <div className="card auth-card">
         <h1>{title}</h1>
-        <p className="muted">{te}</p>
+        {te && <p className="muted">{te}</p>}
         {children}
       </div>
     </div>

@@ -1,82 +1,43 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useCart } from '../context/CartContext';
-import { FREE_SHIPPING_THRESHOLD } from '../pricing';
-import { rupees } from '../api';
+import { useEffect } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 
 function Logo() {
   return (
-    <Link to="/" className="logo" aria-label="Telugu Pickles home">
-      <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">
-        <circle cx="32" cy="32" r="31" fill="#C62828" />
-        <path d="M20 24h24v3c4 2 5 6 5 11v10c0 4-3 7-7 7H22c-4 0-7-3-7-7V38c0-5 1-9 5-11z" fill="#FFF9F0" />
-        <path d="M16 22c0-8 32-8 32 0l2 5c-3 2-6 2-9 0-3 2-6 2-9 0-3 2-6 2-9 0-3 2-6 2-9 0z" fill="#2E7D32" />
-        <path d="M18 40h28v8c0 3-2 5-5 5H23c-3 0-5-2-5-5z" fill="#B5381F" />
+    <Link to="/" className="logo" aria-label="School Management Platform home">
+      <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14" fill="#0D47A1" />
+        <path d="M32 14L12 25L32 36L52 25L32 14Z" fill="#FFFFFF" />
+        <path d="M20 31.5V42C20 46 25 50 32 50C39 50 44 46 44 42V31.5L32 38L20 31.5Z" fill="#90CAF9" />
+        <circle cx="52" cy="36" r="3" fill="#FFD54F" />
+        <path d="M52 39V48" stroke="#FFD54F" strokeWidth="2" strokeLinecap="round" />
       </svg>
       <span className="logo-text">
-        <span className="logo-en">Telugu Pickles</span>
-        <span className="logo-te">తెలుగు పచ్చళ్ళు</span>
+        <span className="logo-en" style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>School SaaS</span>
+        <span className="logo-te" style={{ fontSize: '0.75rem', color: '#64748b' }}>Operations Portal</span>
       </span>
     </Link>
   );
 }
 
 function Header() {
-  const { user, logout } = useAuth();
-  const { count } = useCart();
-  const nav = useNavigate();
-  const [q, setQ] = useState('');
-  const [open, setOpen] = useState(false);
-  const loc = useLocation();
-  useEffect(() => {
-    setOpen(false);
-  }, [loc.pathname, loc.search]);
-
-  const submit = (e) => {
-    e.preventDefault();
-    nav(`/shop${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`);
-  };
-
   return (
     <header className="site-header">
-      <div className="topbar">
-        <span>🚚 Free shipping on orders above {rupees(FREE_SHIPPING_THRESHOLD)}</span>
-        <span className="hide-sm">Made fresh in small batches · Guntur · Godavari · Hyderabad</span>
+      <div className="topbar" style={{ background: '#0f172a', color: '#94a3b8', fontSize: '0.8rem', padding: '0.4rem 1rem', textAlign: 'center' }}>
+        <span>Enterprise Multi-Tenant School Management SaaS · Phase 1 Active</span>
       </div>
-      <div className="header-main container">
+      <div className="header-main container" style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Logo />
-        <form className="search" onSubmit={submit} role="search">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avakaya, gongura, prawns…" aria-label="Search pickles" />
-          <button type="submit" aria-label="Search">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M10 2a8 8 0 105.3 14l5.4 5.3 1.4-1.4-5.3-5.4A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z" fill="currentColor" /></svg>
-          </button>
-        </form>
         <div className="header-actions">
-          {user ? (
-            <div className="user-menu">
-              <span className="hello hide-sm">Namaskaram, {user.name.split(' ')[0]}</span>
-              <button className="link-btn" onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <Link to="/login" className="link-btn">Login</Link>
-          )}
-          <Link to="/cart" className="cart-btn" aria-label={`Cart with ${count} items`}>
-            <svg width="22" height="22" viewBox="0 0 24 24"><path d="M7 18a2 2 0 100 4 2 2 0 000-4zm10 0a2 2 0 100 4 2 2 0 000-4zM5.2 4l.6 3H21l-2 8H7.4L4.4 2H1v2h3.2z" fill="currentColor" /></svg>
-            <span>Cart</span>
-            {count > 0 && <span className="cart-count">{count}</span>}
-          </Link>
-          <button className="menu-toggle" aria-label="Menu" onClick={() => setOpen((o) => !o)}>☰</button>
+          <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
+            Environment: <strong>Development</strong>
+          </span>
         </div>
       </div>
-      <nav className={`main-nav ${open ? 'open' : ''}`}>
-        <div className="container">
-          <NavLink to="/" end>Home</NavLink>
-          <NavLink to="/shop?category=veg" className="nav-veg">Veg Pickles</NavLink>
-          <NavLink to="/shop?category=non-veg" className="nav-nonveg">Non-Veg Pickles</NavLink>
-          <NavLink to="/shop?bestseller=true">Bestsellers</NavLink>
-          <NavLink to="/shop">All Pickles</NavLink>
-          <NavLink to="/orders">My Orders</NavLink>
+      <nav className="main-nav" style={{ borderTop: '1px solid #e2e8f0', background: '#ffffff' }}>
+        <div className="container" style={{ display: 'flex', gap: '1.5rem', padding: '0.5rem 1rem' }}>
+          <NavLink to="/" end style={{ textDecoration: 'none', color: '#0f172a', fontWeight: 600, fontSize: '0.95rem' }}>
+            Platform Overview
+          </NavLink>
         </div>
       </nav>
     </header>
@@ -85,44 +46,41 @@ function Header() {
 
 function Footer() {
   return (
-    <footer className="site-footer">
-      <div className="container footer-grid">
+    <footer className="site-footer" style={{ background: '#0f172a', color: '#cbd5e1', padding: '2.5rem 0 1.5rem', borderTop: '1px solid #1e293b' }}>
+      <div className="container footer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
         <div>
-          <div className="footer-brand">Telugu Pickles</div>
-          <p className="footer-te">అమ్మ చేతి రుచి — the taste of Amma’s hands.</p>
-          <p className="small">Traditional Andhra &amp; Telangana pickles made with cold-pressed groundnut oil, sun-dried spices and no artificial preservatives.</p>
+          <div className="footer-brand" style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>School Management SaaS</div>
+          <p className="small" style={{ color: '#94a3b8', lineHeight: 1.6 }}>
+            Enterprise-grade multi-tenant educational management platform with complete data isolation and automated cloud operations.
+          </p>
         </div>
         <div>
-          <h4>Shop</h4>
-          <Link to="/shop?category=veg">Veg Pickles</Link>
-          <Link to="/shop?category=non-veg">Non-Veg Pickles</Link>
-          <Link to="/shop?bestseller=true">Bestsellers</Link>
+          <h4 style={{ color: '#ffffff', fontSize: '0.9rem', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Architecture</h4>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.4rem' }}>PostgreSQL RLS Tenancy</span>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.4rem' }}>Asymmetric RS256 Identity</span>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem' }}>7 Canonical RBAC Roles</span>
         </div>
         <div>
-          <h4>Help</h4>
-          <Link to="/orders">Track my order</Link>
-          <span>Shipping across India in 3–6 days</span>
-          <span>care@telugupickles.in</span>
-        </div>
-        <div>
-          <h4>Promise</h4>
-          <span>✔ FSSAI-style hygienic kitchen</span>
-          <span>✔ Leak-proof double-sealed jars</span>
-          <span>✔ Small batches, made to order</span>
+          <h4 style={{ color: '#ffffff', fontSize: '0.9rem', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Security &amp; DevOps</h4>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.4rem' }}>Append-Only Audit Logs</span>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.4rem' }}>Kubernetes &amp; GitOps Mesh</span>
+          <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem' }}>AIOps Autonomous Remediation</span>
         </div>
       </div>
-      <div className="footer-bottom">© {new Date().getFullYear()} Telugu Pickles · Demo store for a DevOps + AIOps project — no real payments are taken.</div>
+      <div className="footer-bottom container" style={{ borderTop: '1px solid #1e293b', paddingTop: '1.25rem', textAlign: 'center', fontSize: '0.8rem', color: '#64748b' }}>
+        © {new Date().getFullYear()} School Management SaaS Platform · All tenant data is cryptographically and logically isolated.
+      </div>
     </footer>
   );
 }
 
 export default function Layout() {
   const { pathname } = useLocation();
-  // Block body on purpose: newer browsers return a Promise from scrollTo, and React
-  // treats any returned value as a cleanup function ("destroy is not a function").
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+
   return (
     <>
       <Header />

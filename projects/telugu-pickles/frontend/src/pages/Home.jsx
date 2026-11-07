@@ -1,119 +1,99 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { api } from '../api';
-import PickleJar from '../components/PickleJar';
-import ProductCard from '../components/ProductCard';
-import { DietMark, Spinner } from '../components/Bits';
-
-const HERO_JARS = [
-  { slug: 'avakaya', name: 'Avakaya', localName: 'ఆవకాయ', category: 'veg', color: '#B5381F' },
-  { slug: 'gongura-mutton', name: 'Gongura Mutton', localName: 'గోంగూర మటన్', category: 'non-veg', color: '#4E3418' },
-  { slug: 'gongura', name: 'Gongura', localName: 'గోంగూర', category: 'veg', color: '#4E5A23' },
-];
-
-const PROMISES = [
-  { icon: '🥜', title: 'Cold-pressed Olive oil', text: 'Every jar is made with wood-pressed oil from Anantapur groundnuts.' },
-  { icon: '🌶️', title: 'Kashmiri chillies, sun-dried', text: 'We dry and pound our own chillies and mustard — no ready masalas.' },
-  { icon: '🏺', title: 'Matured in jaadis', text: 'Mango pickles rest in ceramic jaadis for 21 days, the way Ammamma made them.' },
-  { icon: '🚫', title: 'No artificial preservatives', text: 'Only salt, oil and spices. Just like home.' },
-];
+import React from 'react';
 
 export default function Home() {
-  const [best, setBest] = useState(null);
-  const [cats, setCats] = useState([]);
-
-  useEffect(() => {
-    api('/products?bestseller=true&sort=popular').then((d) => setBest(d.products)).catch(() => setBest([]));
-    api('/categories').then((d) => setCats(d.categories)).catch(() => {});
-  }, []);
-  const count = (id) => cats.find((c) => c.id === id)?.count ?? '';
-
   return (
     <>
       <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-copy">
-            <p className="hero-te">అమ్మ చేతి రుచి</p>
-            <h1>
-              ANy kind of pickles are available,
-              <br /> <span>made the Amma way.</span>
-            </h1>
-            <p className="hero-sub">
-              From fiery Guntur Avakaya to Godavari prawn pickle — hand-made in small batches with cold-pressed oil and
-              sun-dried spices, delivered fresh across India.
+        <div className="container hero-grid" style={{ gridTemplateColumns: '1fr', padding: '3.5rem 1rem' }}>
+          <div className="hero-copy" style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+            <p className="hero-te" style={{ letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: '0.9rem', color: '#1565C0' }}>
+              Enterprise Cloud Platform
             </p>
-            <div className="hero-ctas">
-              <Link to="/shop?category=veg" className="btn btn-green btn-lg">Shop Veg Pickles</Link>
-              <Link to="/shop?category=non-veg" className="btn btn-light btn-lg">Shop Non-Veg Pickles</Link>
+            <h1 style={{ fontSize: '2.5rem', lineHeight: '1.2', margin: '0.75rem 0' }}>
+              Multi-Tenant School Management SaaS
+            </h1>
+            <p className="hero-sub" style={{ fontSize: '1.15rem', color: '#555', margin: '1rem auto 2rem' }}>
+              A secure, cloud-native educational operations platform engineered for multi-school federations and campus networks with strict tenant isolation, role-based access control, and automated operations.
+            </p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.25rem', background: '#E3F2FD', color: '#0D47A1', borderRadius: '50px', fontSize: '0.9rem', fontWeight: 600 }}>
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#2E7D32', display: 'inline-block' }}></span>
+              Phase 1: Multi-Tenant Foundation &amp; Identity Service Active
             </div>
-            <ul className="hero-stats">
-              <li><strong>36+</strong> traditional recipes</li>
-              <li><strong>4.6★</strong> from 9,000+ families</li>
-              <li><strong>21 days</strong> jaadi-matured</li>
-            </ul>
-          </div>
-          <div className="hero-jars" aria-hidden="true">
-            {HERO_JARS.map((j, i) => (
-              <div key={j.slug} className={`hero-jar hero-jar-${i}`}>
-                <PickleJar product={j} size={i === 1 ? 210 : 160} />
-              </div>
-            ))}
           </div>
         </div>
       </section>
 
       <section className="container section">
-        <div className="cat-grid">
-          <Link to="/shop?category=veg" className="cat-card cat-veg">
-            <DietMark category="veg" size={22} />
-            <h2>Veg Pickles</h2>
-            <p className="cat-te">శాకాహార పచ్చళ్ళు</p>
-            <p>Avakaya, Gongura, Magaya, Usirikaya, Pandu Mirapakaya and more.</p>
-            <span className="cat-link">{count('veg')} pickles →</span>
-          </Link>
-          <Link to="/shop?category=non-veg" className="cat-card cat-nonveg">
-            <DietMark category="non-veg" size={22} />
-            <h2>Non-Veg Pickles</h2>
-            <p className="cat-te">మాంసాహార పచ్చళ్ళు</p>
-            <p>Chicken, Natu Kodi, Mutton, Gongura Mutton, Prawns, Fish and Crab.</p>
-            <span className="cat-link">{count('non-veg')} pickles →</span>
-          </Link>
+        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+          <h2>Core Architectural Capabilities</h2>
+          <p className="muted" style={{ maxWidth: '600px', margin: '0.5rem auto 0' }}>
+            Engineered to support independent school trusts, campus networks, and distributed academic organizations on unified infrastructure.
+          </p>
         </div>
-      </section>
 
-      <section className="container section">
-        <div className="section-head">
-          <h2>Bestsellers</h2>
-          <Link to="/shop?bestseller=true" className="see-all">See all →</Link>
-        </div>
-        {best === null ? <Spinner /> : (
-          <div className="grid">
-            {best.map((p) => <ProductCard key={p.slug} product={p} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.75rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🏫</div>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Multi-Tenant Isolation</h3>
+            <p className="muted" style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>
+              PostgreSQL Row-Level Security (RLS) guarantees complete data segregation between independent schools and trusts at the database layer.
+            </p>
           </div>
-        )}
+
+          <div className="card" style={{ padding: '1.75rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🔐</div>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Asymmetric RS256 Auth</h3>
+            <p className="muted" style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>
+              Cryptographic JWT isolation with RSA-2048 signing, automated refresh token family rotation, and session compromise detection.
+            </p>
+          </div>
+
+          <div className="card" style={{ padding: '1.75rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>👥</div>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Hierarchical RBAC</h3>
+            <p className="muted" style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>
+              Fine-grained access control across 7 canonical system roles with branch-level and tenant-wide operational scopes.
+            </p>
+          </div>
+
+          <div className="card" style={{ padding: '1.75rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🌐</div>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Custom Domain Routing</h3>
+            <p className="muted" style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>
+              Authoritative host-based tenant resolution supporting dedicated custom domains and branded subdomains per school.
+            </p>
+          </div>
+        </div>
       </section>
 
-      <section className="promise">
+      <section className="promise" style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', padding: '3rem 0' }}>
         <div className="container">
-          <h2>Why families trust Telugu Pickles</h2>
-          <div className="promise-grid">
-            {PROMISES.map((p) => (
-              <div className="promise-item" key={p.title}>
-                <div className="promise-icon">{p.icon}</div>
-                <h3>{p.title}</h3>
-                <p>{p.text}</p>
-              </div>
-            ))}
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <h2>Platform Engineering Standards</h2>
+            <p className="muted">Built following cloud-native best practices and automated GitOps workflows.</p>
           </div>
-        </div>
-      </section>
-
-      <section className="container section regions">
-        <h2>Pickles from every corner</h2>
-        <div className="chips">
-          {['Guntur', 'Godavari', 'Coastal Andhra', 'Telangana', 'Rayalaseema', 'Hyderabad', 'Nellore', 'Kerala', 'Punjab', 'Gujarat', 'Rajasthan', 'Goa', 'Coorg'].map((r) => (
-            <Link key={r} className="chip" to={`/shop?region=${encodeURIComponent(r)}`}>{r}</Link>
-          ))}
+          <div className="promise-grid">
+            <div className="promise-item">
+              <div className="promise-icon">⚡</div>
+              <h3>Automated CI/CD &amp; GitOps</h3>
+              <p>Declarative Kubernetes deployments with ArgoCD, Terraform infrastructure as code, and canary rollouts.</p>
+            </div>
+            <div className="promise-item">
+              <div className="promise-icon">📊</div>
+              <h3>AIOps Telemetry</h3>
+              <p>Prometheus metrics, distributed tracing, and autonomous Kira incident remediation engine.</p>
+            </div>
+            <div className="promise-item">
+              <div className="promise-icon">🛡️</div>
+              <h3>Security &amp; Audit</h3>
+              <p>Immutable append-only audit logging for all administrative events, role changes, and member invitations.</p>
+            </div>
+            <div className="promise-item">
+              <div className="promise-icon">🔄</div>
+              <h3>High Availability</h3>
+              <p>Resilient multi-container microservice mesh behind unified API gateway routing and circuit breaking.</p>
+            </div>
+          </div>
         </div>
       </section>
     </>
