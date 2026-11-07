@@ -26,6 +26,11 @@ const UPSTREAMS = {
 };
 
 const ROUTES = [
+  { prefix: '/api/v1/auth', upstream: 'auth' },
+  { prefix: '/api/v1/tenants', upstream: 'auth' },
+  { prefix: '/api/v1/branches', upstream: 'auth' },
+  { prefix: '/api/v1/memberships', upstream: 'auth' },
+  { prefix: '/api/v1/sessions', upstream: 'auth' },
   { prefix: '/api/auth', upstream: 'auth' },
   { prefix: '/api/products', upstream: 'catalog' },
   { prefix: '/api/categories', upstream: 'catalog' },
@@ -34,16 +39,22 @@ const ROUTES = [
   { prefix: '/api/orders', upstream: 'order' },
 ];
 
-// --- security headers ---
+// --- security headers & tenant header hardening ---
 app.use((req, res, next) => {
+  // Enforce tenant resolution boundary: Strip spoofable tenant headers in production
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_HEADER_TENANT_RESOLVER !== 'true') {
+    delete req.headers['x-tenant-domain'];
+    delete req.headers['x-tenant-id'];
+  }
+
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   const origin = process.env.CORS_ORIGIN;
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Request-Id');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Request-Id, X-Tenant-Domain');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
   }
   next();
@@ -54,7 +65,7 @@ const WINDOW_MS = 60_000;
 const LIMIT = Number(process.env.AUTH_RATE_LIMIT_PER_MIN || 20);
 const hits = new Map();
 setInterval(() => hits.clear(), WINDOW_MS).unref();
-app.use(['/api/auth/login', '/api/auth/register'], (req, res, next) => {
+app.use(['/api/auth/login', '/api/auth/register', '/api/v1/auth/login'], (req, res, next) => {
   const key = req.ip;
   const n = (hits.get(key) || 0) + 1;
   hits.set(key, n);
@@ -97,6 +108,9 @@ for (const { prefix, upstream } of ROUTES) {
       proxyReq: (proxyReq, req) => {
         proxyReq.setHeader('X-Request-Id', req.id);
         proxyReq.setHeader('X-Forwarded-Prefix', '/api');
+        if (req.headers.host) {
+          proxyReq.setHeader('X-Forwarded-Host', req.headers.host);
+        }
       },
       error: (err, req, res) => {
         dependencyErrorsTotal.inc({ dependency: upstream });

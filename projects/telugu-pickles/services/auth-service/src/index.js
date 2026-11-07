@@ -4,10 +4,32 @@ const bcrypt = require('bcryptjs');
 const { createService, ah, HttpError } = require('../../common/service');
 const { initDatabase } = require('../../common/db');
 const { signToken, requireAuth } = require('../../common/auth');
+const { createTenantResolver } = require('./middleware/tenant-resolver');
+const { createAuthRouter } = require('./routes/v1/auth');
+const { createTenantsRouter } = require('./routes/v1/tenants');
+const { createBranchesRouter } = require('./routes/v1/branches');
+const { createMembershipsRouter } = require('./routes/v1/memberships');
+const { createSessionsRouter } = require('./routes/v1/sessions');
 
 const { app, log, start } = createService({ name: 'auth-service' });
 const PORT = Number(process.env.PORT || 4001);
 let pool;
+
+const dbPool = {
+  query: (...args) => pool.query(...args),
+  connect: (...args) => pool.connect(...args),
+  on: (...args) => pool.on(...args),
+  end: (...args) => pool.end(...args),
+};
+
+const tenantResolver = createTenantResolver(dbPool, { required: false });
+
+// --- Phase 1 Multi-Tenant Identity Routes ---
+app.use(['/v1/auth', '/api/v1/auth'], createAuthRouter(dbPool, tenantResolver));
+app.use(['/v1/tenants', '/api/v1/tenants'], createTenantsRouter(dbPool));
+app.use(['/v1/branches', '/api/v1/branches'], createBranchesRouter(dbPool));
+app.use(['/v1/memberships', '/api/v1/memberships'], createMembershipsRouter(dbPool));
+app.use(['/v1/sessions', '/api/v1/sessions'], createSessionsRouter(dbPool));
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS users (

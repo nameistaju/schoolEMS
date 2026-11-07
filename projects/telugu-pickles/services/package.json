@@ -13,13 +13,18 @@
     "start:catalog": "node catalog-service/src/index.js",
     "start:cart": "node cart-service/src/index.js",
     "start:order": "node order-service/src/index.js",
-    "start:payment": "node payment-service/src/index.js"
+    "start:payment": "node payment-service/src/index.js",
+    "migrate": "knex --knexfile auth-service/knexfile.js migrate:latest",
+    "migrate:rollback": "knex --knexfile auth-service/knexfile.js migrate:rollback",
+    "seed:superadmin": "node auth-service/seeds/prod/01_superadmin_bootstrap.js",
+    "seed:demo-schools": "node auth-service/seeds/dev/02_demo_schools.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "express": "^4.21.2",
     "http-proxy-middleware": "^3.0.3",
     "jsonwebtoken": "^9.0.2",
+    "knex": "^3.3.0",
     "pg": "^8.13.1",
     "prom-client": "^15.1.3"
   }

@@ -79,4 +79,31 @@ async function initDatabase({ dbName, migrations = [], seed, log }) {
   return pool;
 }
 
-module.exports = { initDatabase, withRetry, sleep };
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function withTenantContext(poolOrClient, tenantId, callback) {
+  if (!tenantId || typeof tenantId !== 'string' || !UUID_REGEX.test(tenantId)) {
+    throw new Error('Tenant context error: valid UUID format is required');
+  }
+
+  const isPool = typeof poolOrClient.connect === 'function';
+  const client = isPool ? await poolOrClient.connect() : poolOrClient;
+
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT set_config($1, $2, $3)', ['app.current_tenant_id', tenantId, true]);
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await client.query("SELECT set_config('app.current_tenant_id', '', false)").catch(() => {});
+    if (isPool) {
+      client.release();
+    }
+  }
+}
+
+module.exports = { initDatabase, withRetry, sleep, withTenantContext, UUID_REGEX };
