@@ -13,7 +13,8 @@ const config = {
     min: 1,
     max: 5,
     afterCreate: (conn, done) => {
-      if (process.env.SET_SCHEMA_OWNER === 'true') {
+      const user = process.env.PG_MIGRATION_USER || process.env.PGUSER;
+      if (user === 'school_migration_user' || process.env.SET_SCHEMA_OWNER === 'true') {
         conn.query('SET ROLE school_schema_owner;', (err) => done(err, conn));
       } else {
         done(null, conn);

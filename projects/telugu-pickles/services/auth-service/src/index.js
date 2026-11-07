@@ -24,6 +24,9 @@ const dbPool = {
 
 const tenantResolver = createTenantResolver(dbPool, { required: false });
 
+// Apply tenant resolution middleware globally across all routes
+app.use(tenantResolver);
+
 // --- Phase 1 Multi-Tenant Identity Routes ---
 app.use(['/v1/auth', '/api/v1/auth'], createAuthRouter(dbPool, tenantResolver));
 app.use(['/v1/tenants', '/api/v1/tenants'], createTenantsRouter(dbPool));

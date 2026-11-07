@@ -41,7 +41,8 @@ const ROUTES = [
 
 // --- security headers & tenant header hardening ---
 app.use((req, res, next) => {
-  // Enforce tenant resolution boundary: Strip spoofable tenant headers in production
+  // Enforce tenant resolution boundary: Strip spoofable external tenant headers
+  delete req.headers['x-forwarded-host'];
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_HEADER_TENANT_RESOLVER !== 'true') {
     delete req.headers['x-tenant-domain'];
     delete req.headers['x-tenant-id'];

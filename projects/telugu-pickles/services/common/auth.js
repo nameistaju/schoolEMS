@@ -111,6 +111,10 @@ function verifySchoolToken(token) {
     throw new Error('Invalid token algorithm: strictly RS256 required');
   }
 
+  if (decodedHeader.header.kid !== SCHOOL_KEY_ID) {
+    throw new Error(`Untrusted or invalid key ID (kid): ${decodedHeader.header.kid}`);
+  }
+
   const claims = jwt.verify(token, publicKey, {
     algorithms: ['RS256'],
     issuer: SCHOOL_ISSUER,

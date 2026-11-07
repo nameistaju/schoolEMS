@@ -120,7 +120,7 @@ exports.up = async function (knex) {
   for (const perm of PERMISSIONS) {
     await knex.raw(
       `INSERT INTO permissions (permission_key, module, description)
-       VALUES ($1, $2, $3)
+       VALUES (?, ?, ?)
        ON CONFLICT (permission_key) DO UPDATE SET module = EXCLUDED.module, description = EXCLUDED.description`,
       [perm.permission_key, perm.module, perm.description]
     );
@@ -130,7 +130,7 @@ exports.up = async function (knex) {
   for (const role of SYSTEM_ROLES) {
     await knex.raw(
       `INSERT INTO roles (role_key, display_name, description, is_system_role, tenant_id)
-       VALUES ($1, $2, $3, $4, $5)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (role_key) WHERE tenant_id IS NULL DO UPDATE SET
          display_name = EXCLUDED.display_name,
          description = EXCLUDED.description`,
@@ -144,7 +144,7 @@ exports.up = async function (knex) {
       await knex.raw(
         `INSERT INTO role_permissions (role_id, permission_id)
          SELECT r.id, p.id FROM roles r, permissions p
-         WHERE r.role_key = $1 AND r.tenant_id IS NULL AND p.permission_key = $2
+         WHERE r.role_key = ? AND r.tenant_id IS NULL AND p.permission_key = ?
          ON CONFLICT (role_id, permission_id) DO NOTHING`,
         [roleKey, permKey]
       );

@@ -41,7 +41,10 @@ function createTenantsRouter(pool) {
         [tenant.id, defaultDomain.toLowerCase()]
       );
 
-      // 3. Create Default Branch ("Main Campus", code: "MAIN")
+      // 3. Set transaction tenant context to satisfy RLS WITH CHECK on branches
+      await client.query('SELECT set_config($1, $2, $3)', ['app.current_tenant_id', tenant.id, true]);
+
+      // 4. Create Default Branch ("Main Campus", code: "MAIN")
       const { rows: branchRows } = await client.query(
         `INSERT INTO branches (tenant_id, name, code, status)
          VALUES ($1, 'Main Campus', 'MAIN', 'active')
@@ -49,11 +52,11 @@ function createTenantsRouter(pool) {
         [tenant.id]
       );
 
-      // 4. Audit Log
+      // 5. Audit Log
       await client.query(
         `INSERT INTO audit_logs (tenant_id, actor_user_id, action, resource_type, resource_id)
-         VALUES ($1, $2, 'tenant.onboard', 'tenant', $1)`,
-        [tenant.id, req.user.sub]
+         VALUES ($1, $2, 'tenant.onboard', 'tenant', $3)`,
+        [tenant.id, req.user.sub, String(tenant.id)]
       );
 
       await client.query('COMMIT');
